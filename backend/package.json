@@ -1,0 +1,13 @@
+{
+  "name": "shakti-backend-reference",
+  "version": "2.0.0",
+  "description": "Reference Node.js Express/HTTP backend implementation for SHAKTI Women's Protective Network",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test_backend.js"
+  },
+  "keywords": ["safety", "shakti", "emergency", "iot", "ble"],
+  "author": "SHAKTI Engineering Team",
+  "license": "ISC"
+}
