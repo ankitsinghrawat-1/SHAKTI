@@ -46,4 +46,7 @@ app.*.map.json
 
 # Node / Backend
 node_modules/
+backend/.env
 
+# Backend secrets
+backend/.env

@@ -103,7 +103,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                     final np = newPinCtrl.text.trim();
                     final cp = confirmPinCtrl.text.trim();
 
-                    if (curr != safety.userPin && curr != '9811') {
+                    if (curr != safety.userPin) {
                       setDialogState(() => errorText = strings.isHindi ? 'वर्तमान पिन गलत है।' : 'Current PIN is incorrect.');
                       return;
                     }

@@ -33,19 +33,14 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
   late AuthMode _currentMode;
 
   // Login controllers
-  final TextEditingController _loginIdController =
-      TextEditingController(text: '98112 40291');
-  final TextEditingController _loginPinController =
-      TextEditingController(text: '9811');
+  final TextEditingController _loginIdController = TextEditingController();
+  final TextEditingController _loginPinController = TextEditingController();
   bool _obscureLoginPin = true;
 
   // Registration controllers
-  final TextEditingController _regNameController =
-      TextEditingController(text: 'Ananya Sharma');
-  final TextEditingController _regPhoneController =
-      TextEditingController(text: '98112 40291');
-  final TextEditingController _regEmailController =
-      TextEditingController(text: 'ananya.sharma@shield.net');
+  final TextEditingController _regNameController = TextEditingController();
+  final TextEditingController _regPhoneController = TextEditingController();
+  final TextEditingController _regEmailController = TextEditingController();
   final TextEditingController _regPinController =
       TextEditingController();
   final TextEditingController _regConfirmPinController =
@@ -133,8 +128,8 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
     } else {
       setState(() {
         _errorMessage = safety.strings.isHindi
-            ? 'अमान्य क्रेडेंशियल। कृपया सही मोबाइल नंबर और 4-अंकीय पिन दर्ज करें (डेमो पिन: 9811)।'
-            : 'Invalid credentials. Please enter a valid registered phone and 4-digit PIN (Demo: 9811).';
+            ? 'अमान्य क्रेडेंशियल। कृपया पंजीकृत मोबाइल नंबर और 4-अंकीय पिन दर्ज करें।'
+            : 'Invalid credentials. Use the registered phone number and 4-digit PIN.';
       });
     }
   }
@@ -223,7 +218,7 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
         backgroundColor: AppColors.surfaceContainerLowest,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(
-          safety.strings.isHindi ? 'खाता रिकवरी / पिन सहायता' : 'Account Recovery & Demo PIN',
+          safety.strings.isHindi ? 'खाता रिकवरी / पिन सहायता' : 'Account Recovery & PIN Help',
           style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.w800),
         ),
         content: Column(
@@ -232,8 +227,8 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
           children: [
             Text(
               safety.strings.isHindi
-                  ? 'इस प्रोटोटाइप संस्करण में सुरक्षा के लिए स्थानीय क्रेडेंशियल उपयोग होते हैं:\n\n• डिफ़ॉल्ट डेमो पिन: 9811\n• डुरेस/गुप्त पिन: 0000\n• पंजीकृत मोबाइल: 98112 40291\n\nआप किसी भी समय नया खाता भी बना सकते हैं।'
-                  : 'In this frontend prototype, local mock authentication is enabled:\n\n• Default Demo PIN: 9811\n• Emergency Duress PIN: 0000\n• Demo Phone: 98112 40291\n\nYou can also register a fresh prototype account.',
+                  ? 'अपना पंजीकृत मोबाइल नंबर और सुरक्षा पिन उपयोग करें। पिन रिकवरी सुविधा जल्द उपलब्ध होगी।'
+                  : 'Use your registered phone number and security PIN. PIN recovery is not available yet.',
               style: AppTypography.bodySm.copyWith(height: 1.5),
             ),
           ],
@@ -622,7 +617,7 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
           maxLength: 4,
           obscureText: _obscureLoginPin,
           decoration: InputDecoration(
-            hintText: '•••• (Demo: 9811)',
+            hintText: '••••',
             counterText: '',
             prefixIcon: const Icon(Icons.lock_outline, size: 20, color: AppColors.slateSecondary),
             suffixIcon: IconButton(
@@ -814,7 +809,7 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
         TextField(
           controller: _regNameController,
           decoration: InputDecoration(
-            hintText: 'e.g. Ananya Sharma',
+            hintText: 'Full name',
             prefixIcon: const Icon(Icons.person_outline, size: 20, color: AppColors.slateSecondary),
             filled: true,
             fillColor: AppColors.surfaceContainerLowest,
@@ -838,7 +833,7 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
           controller: _regPhoneController,
           keyboardType: TextInputType.phone,
           decoration: InputDecoration(
-            hintText: 'e.g. 98112 40291',
+            hintText: 'Mobile number',
             prefixIcon: const Icon(Icons.phone_android, size: 20, color: AppColors.slateSecondary),
             filled: true,
             fillColor: AppColors.surfaceContainerLowest,

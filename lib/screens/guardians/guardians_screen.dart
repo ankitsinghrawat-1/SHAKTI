@@ -111,24 +111,32 @@ class GuardiansScreen extends StatelessWidget {
                     child: TactileButton(
                       label: safety.strings.isHindi ? 'अभिभावक जोड़ें' : 'Save to Guardian Circle',
                       style: TactileButtonStyle.primaryCrimson,
-                      onPressed: () {
+                      onPressed: () async {
                         if (nameCtrl.text.trim().isNotEmpty) {
-                          safety.addGuardian(
-                            nameCtrl.text.trim(),
-                            selectedRole,
-                            'Verified Link',
+                          final added = await safety.addGuardianAsync(
+                            name: nameCtrl.text.trim(),
+                            phone: phoneCtrl.text.trim(),
+                            role: selectedRole,
                           );
-                          Navigator.of(sheetCtx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: AppColors.primary,
-                              content: Text(
-                                safety.strings.isHindi
-                                    ? '${nameCtrl.text} को सुरक्षा घेरे में जोड़ा गया।'
-                                    : '${nameCtrl.text} added to your live Guardian Circle.',
+                          if (added && context.mounted) {
+                            Navigator.of(sheetCtx).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: AppColors.primary,
+                                content: Text(
+                                  safety.strings.isHindi
+                                      ? '${nameCtrl.text} को सुरक्षा घेरे में जोड़ा गया।'
+                                      : '${nameCtrl.text} added to your live Guardian Circle.',
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          } else if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Guardian could not be saved to the backend.'),
+                              ),
+                            );
+                          }
                         }
                       },
                     ),

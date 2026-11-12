@@ -197,6 +197,7 @@ class SafetyProvider extends ChangeNotifier {
       guardianService: guardianService,
       callService: callService,
       apiService: apiService,
+      authTokenProvider: () => _authToken,
     );
 
     // Forward reactive updates to provider consumers
@@ -215,24 +216,24 @@ class SafetyProvider extends ChangeNotifier {
   bool _isAuthenticated = false;
   bool get isAuthenticated => _isAuthenticated;
 
-  bool _isRegistered = true; // Pre-configured with demo account; can be re-registered
+  bool _isRegistered = false;
   bool get isRegistered => _isRegistered;
 
   // Stored PIN and credentials
-  String _userPin = '9811';
+  String _userPin = '';
   String get userPin => _userPin;
 
-  String _hashedPin = '9811'.hashCode.toRadixString(16);
+  String _hashedPin = '';
   String get hashedPin => _hashedPin;
 
   // User Profile
-  String userName = 'Ananya Sharma';
-  String userPhone = '98112 40291';
-  String userEmail = 'ananya.sharma@shield.net';
-  String shieldId = 'SH-98112-X';
-  final String bloodGroup = 'O+';
-  String medicalNotes = 'Penicillin Sensitive • Asthmatic inhaler carried';
-  String emergencyContact = 'Dr. Kavita Sharma (+91 98112 40292)';
+  String userName = '';
+  String userPhone = '';
+  String userEmail = '';
+  String shieldId = '';
+  final String bloodGroup = '';
+  String medicalNotes = '';
+  String emergencyContact = '';
 
   // App Settings Preferences
   bool settingPushAlerts = true;
@@ -494,125 +495,17 @@ class SafetyProvider extends ChangeNotifier {
   String bandOptionalSatelliteStatus = 'Future Satellite Module (Not Installed)';
 
   // Guardians list
-  final List<GuardianModel> _guardians = [
-    const GuardianModel(
-      id: 'g1',
-      name: 'Priya Sharma',
-      role: 'Sister • Tier 1',
-      battery: 92,
-      distance: '450m away',
-    ),
-    const GuardianModel(
-      id: 'g2',
-      name: 'Dr. Kavita Sharma',
-      role: 'Mother • Tier 1',
-      battery: 84,
-      distance: '2.1km away',
-    ),
-    const GuardianModel(
-      id: 'g3',
-      name: 'Rahul Varma',
-      role: 'Guardian • Tier 2',
-      battery: 90,
-      distance: 'Connaught Place',
-    ),
-    const GuardianModel(
-      id: 'g4',
-      name: 'Delhi PCR Unit #14',
-      role: 'Verified Police Patrol',
-      battery: 100,
-      distance: '250m away',
-      isEmergencyUnit: true,
-    ),
-  ];
+  final List<GuardianModel> _guardians = [];
   List<GuardianModel> get guardians => List.unmodifiable(_guardians);
 
   // Safe Havens
-  final List<SafeHavenModel> safeHavens = const [
-    SafeHavenModel(
-      id: 'h1',
-      name: 'Barakhamba Police Station',
-      type: 'Police 112',
-      distance: '250m away',
-      address: 'Barakhamba Road, Connaught Place',
-      isOpen247: true,
-    ),
-    SafeHavenModel(
-      id: 'h2',
-      name: 'RML Emergency Hospital',
-      type: '24/7 Hospital',
-      distance: '650m away',
-      address: 'Baba Kharak Singh Marg',
-      isOpen247: true,
-    ),
-    SafeHavenModel(
-      id: 'h3',
-      name: 'Rajiv Chowk Metro Security Post',
-      type: 'Safe Zone',
-      distance: '300m away',
-      address: 'Gate 2, Inner Circle',
-      isOpen247: true,
-    ),
-    SafeHavenModel(
-      id: 'h4',
-      name: 'Apollo 24/7 Pharmacy & Clinic',
-      type: 'Safe Zone',
-      distance: '180m away',
-      address: 'Kasturba Gandhi Marg',
-      isOpen247: true,
-    ),
-  ];
+  final List<SafeHavenModel> safeHavens = const [];
 
   // Incidents Vault
-  final List<IncidentRecord> incidents = const [
-    IncidentRecord(
-      id: 'inc-01',
-      title: 'Walk-With-Me Check-in Completed',
-      timestamp: 'Today, 20:15',
-      location: 'Janpath Metro Corridor',
-      hash: 'sha256:7f83b165...9b82',
-      duration: '18 mins • Safe',
-      status: 'Archived',
-    ),
-    IncidentRecord(
-      id: 'inc-02',
-      title: 'Acoustic Monitoring Auto-Session',
-      timestamp: 'Yesterday, 22:40',
-      location: 'Barakhamba Crossing',
-      hash: 'sha256:4a38c219...3f10',
-      duration: '45 secs • Decoy',
-      status: 'Verified',
-    ),
-    IncidentRecord(
-      id: 'inc-03',
-      title: 'Simulated SOS Drill Test',
-      timestamp: '18 Oct, 14:10',
-      location: 'Campus Inner Ring',
-      hash: 'sha256:9c12e841...d720',
-      duration: '05 secs • Drill',
-      status: 'Logged',
-    ),
-  ];
+  final List<IncidentRecord> incidents = const [];
 
   // Community Hazard Reports (Phase 11)
-  final List<SafetyHazardReport> _hazardReports = [
-    const SafetyHazardReport(
-      id: 'haz-01',
-      type: 'Broken Streetlight',
-      location: 'Janpath Outer Ring Corridor',
-      severity: 'Medium',
-      notes: '3 light posts unlit after 21:00.',
-      timestamp: 'Today, 19:40',
-    ),
-    const SafetyHazardReport(
-      id: 'haz-02',
-      type: 'Isolated Stretch',
-      location: 'Subway Underpass towards Metro Gate 3',
-      severity: 'High',
-      notes: 'Low footfall, security booth unoccupied.',
-      timestamp: 'Yesterday, 21:15',
-    ),
-  ];
+  final List<SafetyHazardReport> _hazardReports = [];
   List<SafetyHazardReport> get hazardReports => List.unmodifiable(_hazardReports);
 
   Future<void> checkServerHealth() async {
@@ -694,6 +587,7 @@ class SafetyProvider extends ChangeNotifier {
       _authToken = apiRes.data!['token']?.toString();
       _serverConnectionStatus = ServerConnectionStatus.online;
       _serverStatusMessage = 'Registered with backend (${ApiConfig.baseUrl})';
+      await loadGuardiansAsync();
     } else if (apiRes.isOffline) {
       _serverConnectionStatus = ServerConnectionStatus.offline;
       _serverStatusMessage = 'Backend offline. Registered in local profile.';
@@ -761,6 +655,7 @@ class SafetyProvider extends ChangeNotifier {
         if (userData['shieldId'] != null) shieldId = userData['shieldId'].toString();
       }
 
+      await loadGuardiansAsync();
       _userPin = pin;
       _hashedPin = pin.hashCode.toRadixString(16);
       _isAuthenticated = true;
@@ -769,18 +664,81 @@ class SafetyProvider extends ChangeNotifier {
       return true;
     }
 
-    // Safety-critical resilience: if backend is offline or fails to respond,
-    // seamlessly fall back to local offline authentication so the user is never locked out.
-    final localAuth = authenticateWithCredentials(identifier: identifier, pin: pin);
-    if (localAuth) {
-      _serverConnectionStatus = apiRes.isOffline ? ServerConnectionStatus.offline : ServerConnectionStatus.unknown;
-      _serverStatusMessage = apiRes.isOffline
-          ? 'Backend unreachable. Authenticated via local offline profile.'
-          : 'Server sync unavailable (${apiRes.errorMessage ?? "code ${apiRes.statusCode}"}). Authenticated locally.';
-      return true;
+    return false;
+  }
+
+  Future<bool> loadGuardiansAsync() async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return false;
     }
 
-    return false;
+    final response = await apiService.getGuardians(token: _authToken);
+    if (!response.isSuccess || response.data == null) {
+      return false;
+    }
+
+    final loadedGuardians = response.data!
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (guardian) => GuardianModel(
+            id: guardian['id']?.toString() ?? '',
+            name: guardian['name']?.toString() ?? 'Guardian',
+            role: guardian['role']?.toString() ?? 'Guardian • Tier 2',
+            battery: 100,
+            distance: 'Cloud synchronized',
+            isEmergencyUnit: guardian['isOfficial'] == true,
+          ),
+        )
+        .where((guardian) => guardian.id.isNotEmpty)
+        .toList();
+
+    _guardians
+      ..clear()
+      ..addAll(loadedGuardians);
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> addGuardianAsync({
+    required String name,
+    required String phone,
+    required String role,
+  }) async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return false;
+    }
+
+    final response = await apiService.addGuardian(
+      guardianData: {
+        'name': name,
+        'phone': phone,
+        'role': role,
+        'priorityTier': role.contains('Tier 1') ? 1 : 2,
+        'isOfficial': false,
+      },
+      token: _authToken,
+    );
+
+    if (!response.isSuccess || response.data == null) {
+      return false;
+    }
+
+    final guardian = response.data!['guardian'] as Map<String, dynamic>?;
+    if (guardian == null) {
+      return false;
+    }
+
+    _guardians.add(
+      GuardianModel(
+        id: guardian['id']?.toString() ?? '',
+        name: guardian['name']?.toString() ?? name,
+        role: guardian['role']?.toString() ?? role,
+        battery: 100,
+        distance: 'Cloud synchronized',
+      ),
+    );
+    notifyListeners();
+    return true;
   }
 
   /// Returning User Login (Synchronous immediate check)
@@ -803,16 +761,9 @@ class SafetyProvider extends ChangeNotifier {
     // Verify PIN length
     if (pin.length != 4) return false;
 
-    // Verify PIN matches current registered PIN or default demo PIN '9811'
-    final isPinValid = (pin == _userPin || pin == '9811');
+    final isPinValid = pin == _userPin;
 
-    // Verify Identifier matches or accept demo match
-    final isIdValid = cleanId.isEmpty ||
-        cleanId == cleanPhone ||
-        cleanId.contains('9811') ||
-        cleanId == cleanShield ||
-        cleanId.contains('shield') ||
-        cleanId.contains('ananya');
+    final isIdValid = cleanId == cleanPhone || cleanId == cleanShield;
 
     if (isPinValid && isIdValid) {
       _hashedPin = pin.hashCode.toRadixString(16);

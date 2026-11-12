@@ -5,8 +5,9 @@ This backend reference implements the official **SHAKTI Technical Project Bluepr
 ## Quick Start (Local Running)
 
 ```bash
-# Run server on port 3000 (default)
-node backend/server.js
+# Run the structured server on port 3000 (default)
+cd backend
+npm start
 
 # Verify server health
 curl http://localhost:3000/api/v1/health

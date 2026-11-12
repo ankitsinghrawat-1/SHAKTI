@@ -20,6 +20,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
   final GuardianNotificationService guardianService;
   final EmergencyCallService callService;
   final ApiService? apiService;
+  final String? Function()? authTokenProvider;
 
   bool _isSosActive = false;
   bool get isSosActive => _isSosActive;
@@ -44,6 +45,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     required this.guardianService,
     required this.callService,
     this.apiService,
+    this.authTokenProvider,
   });
 
   /// Unified emergency execution workflow
@@ -149,6 +151,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
         latitude: lat,
         longitude: lng,
         userName: userName,
+        token: authTokenProvider?.call(),
       );
 
       if (res.isSuccess) {
