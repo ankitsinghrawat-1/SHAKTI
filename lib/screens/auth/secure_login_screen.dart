@@ -204,11 +204,72 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
           transitionDuration: const Duration(milliseconds: 300),
         ),
       );
+    } else if (safety.pendingVerificationPhone != null) {
+      await _showPhoneVerificationDialog(safety);
     } else {
-      setState(() => _errorMessage = safety.strings.isHindi
-          ? 'पंजीकरण विफल रहा। कृपया सभी फ़ील्ड की जांच करें।'
-          : 'Registration failed. Please review your input.');
+      setState(() => _errorMessage = safety.serverStatusMessage ??
+          (safety.strings.isHindi
+              ? 'पंजीकरण विफल रहा। कृपया सभी फ़ील्ड की जांच करें।'
+              : 'Registration failed. Please review your input.'));
     }
+  }
+
+  Future<void> _showPhoneVerificationDialog(SafetyProvider safety) async {
+    final codeController = TextEditingController();
+    var error = '';
+    final verified = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Verify phone number'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Enter the verification code sent by SMS.'),
+              TextField(
+                controller: codeController,
+                keyboardType: TextInputType.number,
+                maxLength: 8,
+                autofocus: true,
+              ),
+              if (error.isNotEmpty)
+                Text(error, style: const TextStyle(color: Colors.red)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final ok = await safety.verifyPendingPhone(
+                  codeController.text.trim(),
+                );
+                if (ok) {
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext, true);
+                  }
+                } else {
+                  setDialogState(
+                    () => error = 'Invalid or expired verification code.',
+                  );
+                }
+              },
+              child: const Text('Verify'),
+            ),
+          ],
+        ),
+      ),
+    );
+    codeController.dispose();
+    if (!mounted || verified != true) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const SafetyPermissionsScreen(isFromSettings: false),
+      ),
+    );
   }
 
   void _showForgotPinDialog(SafetyProvider safety) {

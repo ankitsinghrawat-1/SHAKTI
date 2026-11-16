@@ -17,6 +17,7 @@ function mapUser(row) {
     shieldId: row.shield_id,
     pinHash: row.pin_hash,
     isActive: row.is_active,
+    phoneVerifiedAt: row.phone_verified_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -24,7 +25,7 @@ function mapUser(row) {
 
 async function findByPhone(phone) {
   const result = await pool.query(
-    `SELECT id, name, phone, email, shield_id, pin_hash, is_active, created_at, updated_at
+    `SELECT id, name, phone, email, shield_id, pin_hash, is_active, phone_verified_at, created_at, updated_at
      FROM users
      WHERE phone = $1`,
     [phone],
@@ -34,7 +35,7 @@ async function findByPhone(phone) {
 
 async function findByIdentifier(identifier) {
   const result = await pool.query(
-    `SELECT id, name, phone, email, shield_id, pin_hash, is_active, created_at, updated_at
+    `SELECT id, name, phone, email, shield_id, pin_hash, is_active, phone_verified_at, created_at, updated_at
      FROM users
      WHERE phone = $1 OR LOWER(email) = LOWER($1)
      LIMIT 1`,
@@ -45,7 +46,7 @@ async function findByIdentifier(identifier) {
 
 async function findById(id) {
   const result = await pool.query(
-    `SELECT id, name, phone, email, shield_id, pin_hash, is_active, created_at, updated_at
+    `SELECT id, name, phone, email, shield_id, pin_hash, is_active, phone_verified_at, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id],
@@ -59,13 +60,32 @@ async function createUser({ name, phone, email, pin }) {
   const shieldId = `SH-${phoneDigits.slice(-5)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 
   const result = await pool.query(
-    `INSERT INTO users (name, phone, email, pin_hash, shield_id)
-     VALUES ($1, $2, NULLIF($3, ''), $4, $5)
-     RETURNING id, name, phone, email, shield_id, pin_hash, is_active, created_at, updated_at`,
+    `INSERT INTO users (name, phone, email, pin_hash, shield_id, is_active)
+     VALUES ($1, $2, NULLIF($3, ''), $4, $5, FALSE)
+     RETURNING id, name, phone, email, shield_id, pin_hash, is_active, phone_verified_at, created_at, updated_at`,
     [name, phone, email || '', pinHash, shieldId],
   );
 
   return mapUser(result.rows[0]);
+}
+
+async function markPhoneVerified(userId) {
+  const result = await pool.query(
+    `UPDATE users
+     SET phone_verified_at = NOW(), is_active = TRUE, updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, name, phone, email, shield_id, pin_hash, is_active,
+               phone_verified_at, created_at, updated_at`,
+    [userId],
+  );
+  return mapUser(result.rows[0]);
+}
+
+async function deletePendingUser(userId) {
+  await pool.query(
+    'DELETE FROM users WHERE id = $1 AND is_active = FALSE AND phone_verified_at IS NULL',
+    [userId],
+  );
 }
 
 async function verifyPin(user, pin) {
@@ -98,4 +118,6 @@ module.exports = {
   createUser,
   verifyPin,
   generateToken,
+  markPhoneVerified,
+  deletePendingUser,
 };

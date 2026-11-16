@@ -37,6 +37,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
   int _sosDurationSeconds = 0;
   int get sosDurationSeconds => _sosDurationSeconds;
   Timer? _incidentDurationTimer;
+  Future<void>? _incidentPreparationFuture;
 
   UnifiedSosCoordinator({
     required this.permissionService,
@@ -50,12 +51,12 @@ class UnifiedSosCoordinator extends ChangeNotifier {
 
   /// Unified emergency execution workflow
   /// Works identically for App button and Band hardware trigger
-  void triggerSos({
+  Future<void> triggerSos({
     required SosTriggerSource source,
     required String userName,
     bool audioEnabled = true,
     bool videoEnabled = true,
-  }) {
+  }) async {
     // Prevent duplicate triggers from duplicating sessions or recordings
     if (_isSosActive) {
       return;
@@ -72,21 +73,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     // 1. Live Location Tracking (Independent)
     final hasLocPerm = permissionService.isGranted(SafetyPermissionType.location);
     locationService.setLocationPermission(hasLocPerm);
-    locationService.startSosLiveTracking(incidentId: _activeIncidentId!);
-
-    // 2. Guardian Notifications (Independent)
-    final locPoint = locationService.currentLocation;
-    final lat = locPoint?.latitude ?? 28.6335;
-    final lng = locPoint?.longitude ?? 77.2285;
-    guardianService.dispatchEmergencyAlerts(
-      incidentId: _activeIncidentId!,
-      latitude: lat,
-      longitude: lng,
-      userName: userName,
-      isNetworkAvailable: locationService.isNetworkAvailable,
-    );
-
-    // 3. Audio & Video Evidence Recording (Independent)
+    // 2. Audio & Video Evidence Recording (Independent)
     final hasMicPerm = permissionService.isGranted(SafetyPermissionType.microphone);
     final hasCamPerm = permissionService.isGranted(SafetyPermissionType.camera);
     mediaService.startEmergencyRecordings(
@@ -96,6 +83,14 @@ class UnifiedSosCoordinator extends ChangeNotifier {
       audioEnabled: audioEnabled,
       videoEnabled: videoEnabled,
     );
+
+    // 3. Acquire an actual device/browser location and dispatch the incident.
+    _incidentPreparationFuture = _prepareIncidentDispatch(
+      incidentId: _activeIncidentId!,
+      source: source.name,
+      userName: userName,
+    );
+    await _incidentPreparationFuture!;
 
     // 4. Incident Duration Timer
     _incidentDurationTimer?.cancel();
@@ -110,13 +105,36 @@ class UnifiedSosCoordinator extends ChangeNotifier {
 
     notifyListeners();
 
-    // 5. Asynchronous Backend Dispatch (Non-blocking: Never delays emergency actions)
+  }
+
+  Future<void> _prepareIncidentDispatch({
+    required String incidentId,
+    required String source,
+    required String userName,
+  }) async {
+    final locPoint = await locationService.acquireCurrentLocation();
+    locationService.startSosLiveTracking(
+      incidentId: incidentId,
+      apiService: apiService,
+      token: authTokenProvider?.call(),
+    );
+
+    if (locPoint != null) {
+      guardianService.dispatchEmergencyAlerts(
+        incidentId: incidentId,
+        latitude: locPoint.latitude,
+        longitude: locPoint.longitude,
+        userName: userName,
+        isNetworkAvailable: locationService.isNetworkAvailable,
+      );
+    }
+
     if (apiService != null) {
-      _dispatchIncidentToBackend(
-        incidentId: _activeIncidentId!,
-        source: source.name,
-        lat: lat,
-        lng: lng,
+      await _dispatchIncidentToBackend(
+        incidentId: incidentId,
+        source: source,
+        lat: locPoint?.latitude,
+        lng: locPoint?.longitude,
         userName: userName,
       );
     }
@@ -128,20 +146,20 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     String? userName,
   }) {
     if (apiService == null || _activeIncidentId == null) return;
-    _dispatchIncidentToBackend(
+    _incidentPreparationFuture = _dispatchIncidentToBackend(
       incidentId: _activeIncidentId!,
       source: (_activeTriggerSource ?? SosTriggerSource.appSosButton).name,
-      lat: lat ?? locationService.currentLocation?.latitude ?? 28.6139,
-      lng: lng ?? locationService.currentLocation?.longitude ?? 77.2090,
+      lat: lat ?? locationService.currentLocation?.latitude,
+      lng: lng ?? locationService.currentLocation?.longitude,
       userName: userName ?? 'User',
     );
   }
 
-  void _dispatchIncidentToBackend({
+  Future<void> _dispatchIncidentToBackend({
     required String incidentId,
     required String source,
-    required double lat,
-    required double lng,
+    required double? lat,
+    required double? lng,
     required String userName,
   }) async {
     try {
@@ -173,7 +191,10 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     }
   }
 
-  void standDownSos() {
+  Future<void> standDownSos() async {
+    debugPrint(
+      '[UnifiedSosCoordinator] Standing down incident $_activeIncidentId',
+    );
     _isSosActive = false;
     _incidentDurationTimer?.cancel();
 
@@ -181,7 +202,24 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     locationService.stopSosTracking();
 
     // 2. Stop and seal media recordings in Evidence Vault
-    mediaService.stopAndSaveRecordings();
+    await mediaService.stopAndSaveRecordings();
+    final preparation = _incidentPreparationFuture;
+    if (preparation != null) {
+      await preparation;
+    }
+    debugPrint('[UnifiedSosCoordinator] Media recordings stopped');
+    if (apiService != null) {
+      final registered = await mediaService.registerManifestWithApi(
+        apiService: apiService!,
+        token: authTokenProvider?.call(),
+      );
+      if (!registered) {
+        debugPrint(
+          '[UnifiedSosCoordinator] Evidence registration failed for '
+          'incident $_activeIncidentId',
+        );
+      }
+    }
 
     notifyListeners();
   }

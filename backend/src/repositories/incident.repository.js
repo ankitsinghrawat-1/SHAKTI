@@ -32,6 +32,17 @@ function mapIncident(row) {
 }
 
 class IncidentRepository {
+  async getAll(userId) {
+    const result = await pool.query(
+      `SELECT *
+       FROM incidents
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [userId],
+    );
+    return result.rows.map(mapIncident);
+  }
+
   async findById(id, userId) {
     const result = await pool.query(
       `SELECT *

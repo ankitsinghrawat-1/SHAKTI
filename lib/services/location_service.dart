@@ -1,5 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+
 import 'api_service.dart';
 
 class LocationPointModel {
@@ -29,15 +32,11 @@ class LocationService extends ChangeNotifier {
   LocationPointModel? _currentLocation;
   LocationPointModel? get currentLocation => _currentLocation;
 
-  bool _isLocationPermissionGranted = true;
+  bool _isLocationPermissionGranted = false;
   bool get isLocationPermissionGranted => _isLocationPermissionGranted;
 
-  bool _isGpsAvailable = true;
+  bool _isGpsAvailable = false;
   bool get isGpsAvailable => _isGpsAvailable;
-  void setGpsAvailability(bool available) {
-    _isGpsAvailable = available;
-    notifyListeners();
-  }
 
   bool _isNetworkAvailable = true;
   bool get isNetworkAvailable => _isNetworkAvailable;
@@ -48,162 +47,180 @@ class LocationService extends ChangeNotifier {
   String? _lastSyncTimestamp;
   String? get lastSyncTimestamp => _lastSyncTimestamp;
 
-  Timer? _liveTrackingTimer;
+  final List<LocationPointModel> _oneHourHistory = [];
+  List<LocationPointModel> get oneHourHistory =>
+      List.unmodifiable(_oneHourHistory);
 
-  // 1-Hour Location History State
-  bool _locationHistoryEnabled = true;
-  bool get locationHistoryEnabled => _locationHistoryEnabled;
+  StreamSubscription<Position>? _positionSubscription;
 
-  final List<LocationPointModel> _oneHourHistory = [
-    const LocationPointModel(
-      latitude: 28.6289,
-      longitude: 77.2185,
-      accuracy: 2.1,
-      speedKmh: 4.5,
-      landmark: 'Janpath Metro Station (Gate 2)',
-      timestamp: '14:24 (60m ago)',
-    ),
-    const LocationPointModel(
-      latitude: 28.6298,
-      longitude: 77.2210,
-      accuracy: 2.3,
-      speedKmh: 4.8,
-      landmark: 'Tolstoy Marg Junction',
-      timestamp: '14:38 (46m ago)',
-    ),
-    const LocationPointModel(
-      latitude: 28.6305,
-      longitude: 77.2235,
-      accuracy: 2.0,
-      speedKmh: 4.2,
-      landmark: 'K.G. Marg Illuminated Transit Crossing',
-      timestamp: '14:50 (34m ago)',
-    ),
-    const LocationPointModel(
-      latitude: 28.6318,
-      longitude: 77.2258,
-      accuracy: 2.4,
-      speedKmh: 3.9,
-      landmark: 'Barakhamba Road Commercial Arcade',
-      timestamp: '15:05 (19m ago)',
-    ),
-    const LocationPointModel(
-      latitude: 28.6327,
-      longitude: 77.2272,
-      accuracy: 2.2,
-      speedKmh: 4.1,
-      landmark: 'Statesman House Safe Zone Entry',
-      timestamp: '15:15 (9m ago)',
-    ),
-    const LocationPointModel(
-      latitude: 28.6335,
-      longitude: 77.2285,
-      accuracy: 1.8,
-      speedKmh: 0.0,
-      landmark: 'Barakhamba Safe Corridor (Current)',
-      timestamp: '15:24 (Live)',
-    ),
-  ];
-
-  List<LocationPointModel> get oneHourHistory => List.unmodifiable(_oneHourHistory);
-
-  LocationService() {
-    // Initial live point
-    _currentLocation = const LocationPointModel(
-      latitude: 28.6335,
-      longitude: 77.2285,
-      accuracy: 1.8,
-      speedKmh: 0.0,
-      landmark: 'Barakhamba Safe Corridor (Current)',
-      timestamp: 'Just now',
-    );
+  void setGpsAvailability(bool available) {
+    _isGpsAvailable = available;
+    notifyListeners();
   }
 
   void setLocationPermission(bool granted) {
     _isLocationPermissionGranted = granted;
     if (!granted) {
       _currentLocation = null;
-    } else {
-      _currentLocation ??= const LocationPointModel(
-        latitude: 28.6335,
-        longitude: 77.2285,
-        accuracy: 1.8,
-        speedKmh: 0.0,
-        landmark: 'Barakhamba Safe Corridor',
-        timestamp: 'Just now',
-      );
     }
     notifyListeners();
   }
 
   void setNetworkAvailability(bool available) {
     _isNetworkAvailable = available;
-    if (available && _offlineQueue.isNotEmpty) {
-      syncOfflineQueue();
-    }
     notifyListeners();
   }
 
-  void setLocationHistoryEnabled(bool enabled) {
-    _locationHistoryEnabled = enabled;
+  Future<LocationPointModel?> acquireCurrentLocation() async {
+    _currentLocation = null;
     notifyListeners();
-  }
-
-  void startSosLiveTracking({required String incidentId}) {
-    if (!_isLocationPermissionGranted) {
-      _isTracking = false;
-      notifyListeners();
-      return;
-    }
-
-    _isTracking = true;
-    _lastSyncTimestamp = '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}';
-    notifyListeners();
-
-    _liveTrackingTimer?.cancel();
-    // 30-second periodic live telemetry update interval as requested
-    _liveTrackingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (!_isTracking) {
-        timer.cancel();
-        return;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        setGpsAvailability(false);
+        return null;
       }
-      _recordPeriodicPoint(incidentId);
-    });
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        setLocationPermission(false);
+        return null;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: kIsWeb
+            ? WebSettings(
+                accuracy: LocationAccuracy.high,
+                maximumAge: Duration.zero,
+              )
+            : AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 5,
+                forceLocationManager: false,
+                timeLimit: const Duration(seconds: 15),
+              ),
+      );
+      final point = _toPoint(position);
+      _isLocationPermissionGranted = true;
+      _isGpsAvailable = true;
+      _currentLocation = point;
+      _addHistoryPoint(point);
+      debugPrint(
+        '[LocationService] Current GPS fix: '
+        '${point.latitude}, ${point.longitude} (±${point.accuracy}m)',
+      );
+      notifyListeners();
+      return point;
+    } catch (error) {
+      debugPrint('[LocationService] Current location failed: $error');
+      _currentLocation = null;
+      setGpsAvailability(false);
+      return null;
+    }
   }
 
-  void _recordPeriodicPoint(String incidentId) {
-    if (!_isLocationPermissionGranted) return;
+  void startSosLiveTracking({
+    required String incidentId,
+    ApiService? apiService,
+    String? token,
+  }) {
+    _positionSubscription?.cancel();
+    _isTracking = true;
+    notifyListeners();
 
-    final now = DateTime.now();
-    final timeStr = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: kIsWeb
+          ? WebSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 5,
+              maximumAge: Duration.zero,
+            )
+          : const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 5,
+            ),
+    ).listen(
+      (position) {
+        final point = _toPoint(position, incidentId: incidentId);
+        _currentLocation = point;
+        _isLocationPermissionGranted = true;
+        _isGpsAvailable = true;
+        _addHistoryPoint(point);
+        debugPrint(
+          '[LocationService] Live GPS fix: '
+          '${point.latitude}, ${point.longitude} (±${point.accuracy}m)',
+        );
+        if (!_isNetworkAvailable || apiService == null) {
+          _offlineQueue.add(point);
+        } else {
+          unawaited(_sendPoint(apiService, point, token));
+        }
+        notifyListeners();
+      },
+      onError: (Object error) {
+        debugPrint('[LocationService] Live location failed: $error');
+        _currentLocation = null;
+        setGpsAvailability(false);
+      },
+    );
+  }
 
-    final newPoint = LocationPointModel(
-      latitude: 28.6335 + (now.second % 5) * 0.0001,
-      longitude: 77.2285 + (now.second % 5) * 0.0001,
-      accuracy: 1.8,
-      landmark: 'Barakhamba Safe Corridor',
-      timestamp: timeStr,
+  Future<void> _sendPoint(
+    ApiService apiService,
+    LocationPointModel point,
+    String? token,
+  ) async {
+    final incidentId = point.incidentId;
+    if (incidentId == null) return;
+
+    final response = await apiService.sendLocationTelemetry(
+      incidentId: incidentId,
+      locationPoints: [
+        {
+          'latitude': point.latitude,
+          'longitude': point.longitude,
+          'accuracy': point.accuracy,
+          'speed': point.speedKmh,
+          'provider': 'DEVICE_GPS',
+          'timestamp': point.timestamp,
+        },
+      ],
+      token: token,
+    );
+    if (!response.isSuccess) {
+      _offlineQueue.add(point);
+      notifyListeners();
+    }
+  }
+
+  LocationPointModel _toPoint(Position position, {String? incidentId}) {
+    return LocationPointModel(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: position.accuracy,
+      speedKmh: position.speed < 0 ? 0 : position.speed * 3.6,
+      landmark: 'Current device location',
+      timestamp: position.timestamp.toIso8601String(),
       incidentId: incidentId,
     );
+  }
 
-    _currentLocation = newPoint;
-
-    if (!_isNetworkAvailable) {
-      _offlineQueue.add(newPoint);
-    } else {
-      _lastSyncTimestamp = '$timeStr:${now.second.toString().padLeft(2, '0')}';
+  void _addHistoryPoint(LocationPointModel point) {
+    _oneHourHistory.add(point);
+    if (_oneHourHistory.length > 360) {
+      _oneHourHistory.removeAt(0);
     }
-    notifyListeners();
   }
 
   void syncOfflineQueue() {
     if (_offlineQueue.isEmpty) return;
-    _offlineQueue.clear();
-    _lastSyncTimestamp = 'Synced ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}';
+    _lastSyncTimestamp = DateTime.now().toIso8601String();
     notifyListeners();
   }
 
-  /// Flushes pending offline coordinates to the backend incident stream.
   Future<bool> syncOfflineQueueWithApi({
     required ApiService apiService,
     String? incidentId,
@@ -211,41 +228,44 @@ class LocationService extends ChangeNotifier {
   }) async {
     if (_offlineQueue.isEmpty) return true;
 
-    final targetId = incidentId ?? _offlineQueue.first.incidentId ?? 'SOS-OFFLINE';
-    final pointsPayload = _offlineQueue.map((pt) => {
-      'latitude': pt.latitude,
-      'longitude': pt.longitude,
-      'accuracy': pt.accuracy,
-      'speedKmh': pt.speedKmh,
-      'landmark': pt.landmark,
-      'timestamp': pt.timestamp,
-      'incidentId': pt.incidentId ?? targetId,
-    }).toList();
+    final targetId = incidentId ?? _offlineQueue.first.incidentId;
+    if (targetId == null) return false;
+    final pointsPayload = _offlineQueue
+        .map(
+          (point) => {
+            'latitude': point.latitude,
+            'longitude': point.longitude,
+            'accuracy': point.accuracy,
+            'speed': point.speedKmh,
+            'provider': 'DEVICE_GPS',
+            'timestamp': point.timestamp,
+          },
+        )
+        .toList();
 
-    final res = await apiService.sendLocationTelemetry(
+    final response = await apiService.sendLocationTelemetry(
       incidentId: targetId,
       locationPoints: pointsPayload,
       token: token,
     );
+    if (!response.isSuccess) return false;
 
-    if (res.isSuccess) {
-      _offlineQueue.clear();
-      _lastSyncTimestamp = 'Server Synced ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}';
-      notifyListeners();
-      return true;
-    }
-    return false;
+    _offlineQueue.clear();
+    _lastSyncTimestamp = DateTime.now().toIso8601String();
+    notifyListeners();
+    return true;
   }
 
   void stopSosTracking() {
     _isTracking = false;
-    _liveTrackingTimer?.cancel();
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _liveTrackingTimer?.cancel();
+    _positionSubscription?.cancel();
     super.dispose();
   }
 }

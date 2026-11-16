@@ -89,7 +89,7 @@ class ResponsiveFrame extends StatelessWidget {
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
-                    'PROTOTYPE DEMO: Simulated environment. No real emergency dispatches or GPS calls are made.',
+                    'CLOUD BACKEND ACTIVE: SOS data, GPS, and evidence sync when permissions and connectivity are available.',
                     style: AppTypography.labelSm.copyWith(
                       fontSize: 10,
                       color: const Color(0xFF92400E),

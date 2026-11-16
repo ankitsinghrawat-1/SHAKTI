@@ -107,24 +107,6 @@ class ChatMessage {
   });
 }
 
-class LocationBreadcrumb {
-  final double latitude;
-  final double longitude;
-  final String timestamp;
-  final String landmark;
-  final double accuracy;
-  final double speedKmh;
-
-  const LocationBreadcrumb({
-    required this.latitude,
-    required this.longitude,
-    required this.timestamp,
-    required this.landmark,
-    this.accuracy = 2.5,
-    this.speedKmh = 4.2,
-  });
-}
-
 class EmergencyCallRecord {
   final String id;
   final String contactName;
@@ -340,59 +322,6 @@ class SafetyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // One-Hour Location History (6 breadcrumbs over last 60 minutes)
-  final List<LocationBreadcrumb> _oneHourRoute = [
-    const LocationBreadcrumb(
-      latitude: 28.6289,
-      longitude: 77.2185,
-      timestamp: '14:24 (60m ago)',
-      landmark: 'Janpath Metro Station (Gate 2)',
-      accuracy: 2.1,
-      speedKmh: 4.5,
-    ),
-    const LocationBreadcrumb(
-      latitude: 28.6298,
-      longitude: 77.2210,
-      timestamp: '14:38 (46m ago)',
-      landmark: 'Tolstoy Marg Junction',
-      accuracy: 2.3,
-      speedKmh: 4.8,
-    ),
-    const LocationBreadcrumb(
-      latitude: 28.6305,
-      longitude: 77.2235,
-      timestamp: '14:50 (34m ago)',
-      landmark: 'K.G. Marg Illuminated Transit Crossing',
-      accuracy: 2.0,
-      speedKmh: 4.2,
-    ),
-    const LocationBreadcrumb(
-      latitude: 28.6318,
-      longitude: 77.2258,
-      timestamp: '15:05 (19m ago)',
-      landmark: 'Barakhamba Road Commercial Arcade',
-      accuracy: 2.4,
-      speedKmh: 3.9,
-    ),
-    const LocationBreadcrumb(
-      latitude: 28.6327,
-      longitude: 77.2272,
-      timestamp: '15:15 (9m ago)',
-      landmark: 'Statesman House Safe Zone Entry',
-      accuracy: 2.2,
-      speedKmh: 4.1,
-    ),
-    const LocationBreadcrumb(
-      latitude: 28.6335,
-      longitude: 77.2285,
-      timestamp: '15:24 (Live)',
-      landmark: 'Barakhamba Safe Corridor (Current)',
-      accuracy: 1.8,
-      speedKmh: 0.0,
-    ),
-  ];
-  List<LocationBreadcrumb> get oneHourRoute => List.unmodifiable(_oneHourRoute);
-
   // Emergency Call History (Manual App-Initiated Logs, Section 4)
   final List<EmergencyCallRecord> _emergencyCallLogs = [
     const EmergencyCallRecord(
@@ -502,7 +431,9 @@ class SafetyProvider extends ChangeNotifier {
   final List<SafeHavenModel> safeHavens = const [];
 
   // Incidents Vault
-  final List<IncidentRecord> incidents = const [];
+  final List<IncidentRecord> incidents = [];
+  String? _pendingVerificationPhone;
+  String? get pendingVerificationPhone => _pendingVerificationPhone;
 
   // Community Hazard Reports (Phase 11)
   final List<SafetyHazardReport> _hazardReports = [];
@@ -584,13 +515,26 @@ class SafetyProvider extends ChangeNotifier {
     );
 
     if (apiRes.isSuccess && apiRes.data != null) {
+      if (apiRes.data!['verificationRequired'] == true) {
+        _pendingVerificationPhone = phone.trim();
+        _serverConnectionStatus = ServerConnectionStatus.online;
+        _serverStatusMessage = 'Verification code sent to your phone.';
+        notifyListeners();
+        return false;
+      }
       _authToken = apiRes.data!['token']?.toString();
       _serverConnectionStatus = ServerConnectionStatus.online;
       _serverStatusMessage = 'Registered with backend (${ApiConfig.baseUrl})';
       await loadGuardiansAsync();
+      await loadIncidentsAsync();
     } else if (apiRes.isOffline) {
       _serverConnectionStatus = ServerConnectionStatus.offline;
       _serverStatusMessage = 'Backend offline. Registered in local profile.';
+    } else {
+      _serverStatusMessage =
+          apiRes.errorMessage ?? 'Registration could not be completed.';
+      notifyListeners();
+      return false;
     }
 
     return registerUser(
@@ -600,6 +544,31 @@ class SafetyProvider extends ChangeNotifier {
       pin: pin,
       pairBand: pairBand,
     );
+  }
+
+  Future<bool> verifyPendingPhone(String code) async {
+    final phone = _pendingVerificationPhone;
+    if (phone == null) return false;
+    final response = await apiService.verifyPhone(phone: phone, code: code);
+    if (!response.isSuccess || response.data == null) return false;
+
+    final userData = response.data!['user'] as Map<String, dynamic>?;
+    _authToken = response.data!['token']?.toString();
+    _pendingVerificationPhone = null;
+    if (userData != null) {
+      userName = userData['name']?.toString() ?? userName;
+      userPhone = userData['phone']?.toString() ?? phone;
+      userEmail = userData['email']?.toString() ?? userEmail;
+      shieldId = userData['shieldId']?.toString() ?? shieldId;
+    }
+    _isRegistered = true;
+    _isAuthenticated = true;
+    _isCovertMode = false;
+    _serverConnectionStatus = ServerConnectionStatus.online;
+    await loadGuardiansAsync();
+    await loadIncidentsAsync();
+    notifyListeners();
+    return true;
   }
 
   /// First-time User Registration (Synchronous immediate execution)
@@ -656,6 +625,7 @@ class SafetyProvider extends ChangeNotifier {
       }
 
       await loadGuardiansAsync();
+      await loadIncidentsAsync();
       _userPin = pin;
       _hashedPin = pin.hashCode.toRadixString(16);
       _isAuthenticated = true;
@@ -695,6 +665,45 @@ class SafetyProvider extends ChangeNotifier {
     _guardians
       ..clear()
       ..addAll(loadedGuardians);
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> loadIncidentsAsync() async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return false;
+    }
+
+    final response = await apiService.getIncidents(token: _authToken);
+    if (!response.isSuccess || response.data == null) {
+      return false;
+    }
+
+    final loadedIncidents = response.data!
+        .whereType<Map<String, dynamic>>()
+        .map((incident) {
+          final location = incident['triggerLocation'] as Map<String, dynamic>?;
+          final latitude = location?['latitude'];
+          final longitude = location?['longitude'];
+          final locationText = latitude is num && longitude is num
+              ? '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}'
+              : 'Location unavailable';
+          return IncidentRecord(
+            id: incident['id']?.toString() ?? '',
+            title: 'Emergency SOS Incident',
+            timestamp: incident['createdAt']?.toString() ?? '',
+            location: locationText,
+            hash: incident['receiptId']?.toString() ?? 'Server sealed',
+            duration: 'Cloud recorded',
+            status: incident['status']?.toString() ?? 'UNKNOWN',
+          );
+        })
+        .where((incident) => incident.id.isNotEmpty)
+        .toList();
+
+    incidents
+      ..clear()
+      ..addAll(loadedIncidents);
     notifyListeners();
     return true;
   }
@@ -947,6 +956,7 @@ class SafetyProvider extends ChangeNotifier {
     _sosCountdown = 5;
     _safetyStatus = 'Protected';
     unifiedSos.standDownSos();
+    unawaited(loadIncidentsAsync());
     notifyListeners();
   }
 

@@ -20,8 +20,8 @@ class AppStrings {
   String get dispatch112 => isHindi ? '112 आपातकालीन' : '112 DISPATCH';
   String get verified => isHindi ? 'सत्यापित' : 'Verified';
   String get prototypeBanner => isHindi
-      ? 'प्रोटोटाइप डेमो: सिम्युलेटेड वातावरण। कोई वास्तविक आपातकालीन कॉल या जीपीएस नहीं भेजा जाता।'
-      : 'PROTOTYPE DEMO: Simulated environment. No real emergency dispatches or GPS calls are made.';
+      ? 'क्लाउड बैकएंड सक्रिय: एसओएस डेटा, जीपीएस और साक्ष्य अनुमति के अनुसार सिंक होते हैं।'
+      : 'CLOUD BACKEND ACTIVE: SOS data, GPS, and evidence sync when permissions and connectivity are available.';
   String get cancel => isHindi ? 'रद्द करें' : 'Cancel';
   String get save => isHindi ? 'सहेजें' : 'Save';
   String get back => isHindi ? 'वापस' : 'Back';

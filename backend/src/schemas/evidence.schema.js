@@ -3,6 +3,7 @@ const { z } = require('zod');
 const EvidenceItemSchema = z.object({
   fileType: z.enum(['AUDIO', 'VIDEO', 'PHOTO', 'BLE_LOG', 'ACCELEROMETER', 'OTHER']).default('AUDIO'),
   fileName: z.string().min(1),
+  fileReference: z.string().min(1).optional(),
   sha256Digest: z.string().regex(/^[a-fA-F0-9]{64}$/, 'sha256Digest must be a 64-character hexadecimal SHA-256 hash'),
   fileSizeBytes: z.number().int().positive('File size must be greater than 0'),
   capturedAt: z.string().optional(),

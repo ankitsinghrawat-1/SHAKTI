@@ -17,9 +17,17 @@ const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   duressPin: '0000', // Hardcoded safety specification: Duress PIN for silent emergency decoy
   bcryptSaltRounds: 10,
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioVerifyServiceSid: process.env.TWILIO_VERIFY_SERVICE_SID || '',
+  demoOtpEnabled: process.env.DEMO_OTP_ENABLED === 'true',
+  demoOtpCode: process.env.DEMO_OTP_CODE || '123456',
 
   // Database Storage
   databaseUrl: process.env.DATABASE_URL || '',
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  evidenceBucket: process.env.SUPABASE_EVIDENCE_BUCKET || 'evidence-vault',
   dataDir: path.resolve(__dirname, '../../data'),
   dbFilePath: path.resolve(__dirname, '../../data/shakti_store.json'),
 

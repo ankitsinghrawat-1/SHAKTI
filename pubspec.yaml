@@ -38,6 +38,15 @@ dependencies:
   provider: ^6.1.5+1
   image_picker: ^1.2.4
   http: ^1.6.0
+  geolocator: ^14.0.2
+  crypto: ^3.0.6
+  path_provider: ^2.1.5
+  record: ^6.1.2
+  camera: ^0.12.2
+  audioplayers: ^6.5.0
+  video_player: ^2.14.1
+  pdf: ^3.13.1
+  printing: ^5.15.1
 
 dev_dependencies:
   flutter_test:

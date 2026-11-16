@@ -118,6 +118,16 @@ class ApiService {
     );
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> verifyPhone({
+    required String phone,
+    required String code,
+  }) async {
+    return _sendPost(
+      endpoint: '/auth/verify-phone',
+      body: {'phone': phone, 'code': code},
+    );
+  }
+
   /// Fetch Authenticated User Profile (`GET /auth/me`)
   Future<ApiResponse<Map<String, dynamic>>> getProfile({required String token}) async {
     return _sendGet(endpoint: '/auth/me', token: token);
@@ -154,25 +164,27 @@ class ApiService {
   Future<ApiResponse<Map<String, dynamic>>> createIncident({
     required String incidentId,
     required String source,
-    required double latitude,
-    required double longitude,
+    double? latitude,
+    double? longitude,
     required String userName,
     String? token,
   }) async {
+    final body = <String, dynamic>{
+      'incidentId': incidentId,
+      'source': source,
+      'userName': userName,
+      'timestamp': DateTime.now().toIso8601String(),
+      'severity': 'Urgent',
+      'status': 'CREATED',
+    };
+    if (latitude != null) body['latitude'] = latitude;
+    if (longitude != null) body['longitude'] = longitude;
+
     return _sendPost(
       endpoint: '/incidents',
       idempotencyKey: incidentId,
       token: token,
-      body: {
-        'incidentId': incidentId,
-        'source': source,
-        'latitude': latitude,
-        'longitude': longitude,
-        'userName': userName,
-        'timestamp': DateTime.now().toIso8601String(),
-        'severity': 'Urgent',
-        'status': 'CREATED',
-      },
+      body: body,
     );
   }
 
@@ -182,6 +194,22 @@ class ApiService {
     String? token,
   }) async {
     return _sendGet(endpoint: '/incidents/$incidentId', token: token);
+  }
+
+  /// Fetch authenticated user's cloud incident history.
+  Future<ApiResponse<List<dynamic>>> getIncidents({String? token}) async {
+    final response = await _sendGet(endpoint: '/incidents', token: token);
+    if (response.isSuccess && response.data != null) {
+      return ApiResponse.success(
+        (response.data!['incidents'] as List<dynamic>?) ?? [],
+        statusCode: response.statusCode ?? 200,
+      );
+    }
+    return ApiResponse.failure(
+      errorMessage: response.errorMessage,
+      statusCode: response.statusCode,
+      isOffline: response.isOffline,
+    );
   }
 
   /// Stream Live Location Telemetry (`POST /incidents/:id/locations`)
@@ -216,6 +244,79 @@ class ApiService {
         'items': evidenceItems,
         'sealedAt': DateTime.now().toIso8601String(),
       },
+    );
+  }
+
+  /// Authorize an upload to the private Supabase evidence bucket.
+  Future<ApiResponse<Map<String, dynamic>>> createEvidenceUploadUrl({
+    required String incidentId,
+    required String fileName,
+    String? token,
+  }) async {
+    return _sendPost(
+      endpoint: '/evidence/upload-url',
+      token: token,
+      body: {
+        'incidentId': incidentId,
+        'fileName': fileName,
+      },
+    );
+  }
+
+  /// Upload a captured file using the signed URL issued by the backend.
+  Future<ApiResponse<void>> uploadEvidenceBytes({
+    required String signedUrl,
+    required List<int> bytes,
+    required String contentType,
+  }) async {
+    try {
+      final response = await _client
+          .put(
+            Uri.parse(signedUrl),
+            headers: {
+              'Content-Type': contentType,
+              'x-upsert': 'false',
+              'cache-control': 'no-cache',
+            },
+            body: bytes,
+          )
+          .timeout(ApiConfig.requestTimeout);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return ApiResponse<void>(
+          isSuccess: true,
+          statusCode: response.statusCode,
+        );
+      }
+
+      return ApiResponse.failure(
+        statusCode: response.statusCode,
+        errorMessage:
+            'Evidence upload failed with status ${response.statusCode}: '
+            '${response.body}',
+      );
+    } on TimeoutException {
+      return ApiResponse.failure(
+        errorMessage: 'Evidence upload timed out.',
+        isOffline: true,
+      );
+    } catch (e) {
+      return ApiResponse.failure(
+        errorMessage: 'Evidence upload failed: $e',
+        isOffline: true,
+      );
+    }
+  }
+
+  /// Get a short-lived URL for an owned evidence file.
+  Future<ApiResponse<Map<String, dynamic>>> getEvidenceDownloadUrl({
+    required String incidentId,
+    String fileType = 'AUDIO',
+    String? token,
+  }) async {
+    return _sendGet(
+      endpoint: '/evidence/incidents/$incidentId/download-url?fileType=$fileType',
+      token: token,
     );
   }
 

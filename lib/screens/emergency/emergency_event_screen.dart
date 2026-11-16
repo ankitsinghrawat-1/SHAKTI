@@ -586,7 +586,7 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
                             style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                           ),
                           Text(
-                            '±${locService.currentLocation!.accuracy}m • GPS+GLONASS',
+                            '±${locService.currentLocation!.accuracy}m • Device location',
                             style: const TextStyle(color: AppColors.emeraldSafe, fontSize: 11, fontWeight: FontWeight.w700),
                           ),
                         ] else ...[

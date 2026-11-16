@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:provider/provider.dart';
+import 'package:printing/printing.dart';
+import 'package:video_player/video_player.dart';
 import '../../providers/safety_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_typography.dart';
@@ -17,100 +21,192 @@ class EvidenceVaultScreen extends StatefulWidget {
 
 class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
   String? _currentlyPlayingId;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
-  void _togglePlay(String id) {
-    setState(() {
-      if (_currentlyPlayingId == id) {
-        _currentlyPlayingId = null;
-      } else {
-        _currentlyPlayingId = id;
+  Future<void> _togglePlay(
+    IncidentRecord incident,
+    SafetyProvider safety,
+  ) async {
+    if (_currentlyPlayingId == incident.id) {
+      await _audioPlayer.stop();
+      if (mounted) {
+        setState(() => _currentlyPlayingId = null);
       }
-    });
+
+      return;
+    }
+
+    await _audioPlayer.stop();
+    if (mounted) {
+      setState(() => _currentlyPlayingId = incident.id);
+    }
+
+    final response = await safety.apiService.getEvidenceDownloadUrl(
+      incidentId: incident.id,
+      token: safety.authToken,
+    );
+    final signedUrl = response.data?['signedUrl'] as String?;
+    if (!response.isSuccess || signedUrl == null) {
+      if (mounted) {
+        setState(() => _currentlyPlayingId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              response.errorMessage ?? 'Audio evidence is not available.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      await _audioPlayer.play(UrlSource(signedUrl));
+    } catch (error) {
+      if (mounted) {
+        setState(() => _currentlyPlayingId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not play audio evidence: $error')),
+        );
+      }
+    }
   }
 
-  void _showExportDossier(BuildContext context, IncidentRecord inc, SafetyProvider safety) {
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.surfaceContainerLowest,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primaryFixed,
-              ),
-              child: const Icon(Icons.description, color: AppColors.primary, size: 22),
+  Future<void> _openVideo(
+    IncidentRecord incident,
+    SafetyProvider safety,
+  ) async {
+    final response = await safety.apiService.getEvidenceDownloadUrl(
+      incidentId: incident.id,
+      fileType: 'VIDEO',
+      token: safety.authToken,
+    );
+    final signedUrl = response.data?['signedUrl'] as String?;
+    if (!response.isSuccess || signedUrl == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              response.errorMessage ?? 'Video evidence is not available.',
             ),
-            const SizedBox(width: 10),
-            Text(
-              safety.strings.isHindi ? 'कानूनी साक्ष्य डोजियर' : 'Police Evidence Dossier',
-              style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0x18000000)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('DOCUMENT ID: SHAKTI-EV-${inc.id.toUpperCase()}',
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
-                  const SizedBox(height: 4),
-                  Text('TIMESTAMP: ${inc.timestamp}', style: const TextStyle(fontSize: 11)),
-                  Text('LOCATION: ${inc.location}', style: const TextStyle(fontSize: 11)),
-                  Text('HASH: ${inc.hash}', style: const TextStyle(fontSize: 10, fontFamily: 'monospace')),
-                  const SizedBox(height: 6),
-                  const Text('CHAIN OF CUSTODY: Hardware Enclave Timestamp Validated',
-                      style: TextStyle(fontSize: 10, color: AppColors.emeraldSafe, fontWeight: FontWeight.w700)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              safety.strings.isHindi
-                  ? 'यह डोजियर दिल्ली पुलिस 112 कंट्रोल रूम और संबंधित जांच अधिकारियों को अग्रेषित करने के लिए तैयार है।'
-                  : 'This dossier is digitally sealed for forward submission to Emergency 112 CAD or investigating authorities.',
-              style: AppTypography.bodySm.copyWith(color: AppColors.slateSecondary),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: Text(safety.strings.cancel, style: const TextStyle(color: AppColors.slateSecondary)),
           ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-            ),
-            icon: const Icon(Icons.share, size: 16),
-            label: Text(safety.strings.isHindi ? 'साझा करें (पीडीएफ)' : 'Export PDF (Demo)'),
-            onPressed: () {
-              Navigator.of(dialogCtx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Simulated dossier PDF compiled and ready for dispatch.'),
-                ),
+        );
+      }
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(Uri.parse(signedUrl));
+    try {
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Video Evidence'),
+          content: ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: controller,
+            builder: (context, value, child) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AspectRatio(
+                    aspectRatio: value.aspectRatio,
+                    child: VideoPlayer(controller),
+                  ),
+                  VideoProgressIndicator(controller, allowScrubbing: true),
+                  IconButton(
+                    icon: Icon(
+                      value.isPlaying ? Icons.pause : Icons.play_arrow,
+                    ),
+                    onPressed: () {
+                      if (value.isPlaying) {
+                        controller.pause();
+                      } else {
+                        controller.play();
+                      }
+                    },
+                  ),
+                ],
               );
             },
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      await controller.dispose();
+    }
+  }
+
+  Future<void> _showExportDossier(
+    IncidentRecord incident,
+    SafetyProvider safety,
+  ) async {
+    final response = await safety.apiService.getIncidentStatus(
+      incidentId: incident.id,
+      token: safety.authToken,
+    );
+    if (!response.isSuccess || response.data == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.errorMessage ?? 'Could not load incident data.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final cloudIncident = response.data!['incident'] as Map<String, dynamic>?;
+    if (cloudIncident == null) return;
+    final manifests = (cloudIncident['evidenceManifests'] as List<dynamic>?) ?? [];
+    final document = pw.Document();
+    document.addPage(
+      pw.MultiPage(
+        build: (context) => [
+          pw.Header(level: 0, text: 'SHAKTI Evidence Dossier'),
+          pw.Text('Incident ID: ${cloudIncident['id'] ?? incident.id}'),
+          pw.Text('Status: ${cloudIncident['status'] ?? incident.status}'),
+          pw.Text('Created: ${cloudIncident['createdAt'] ?? incident.timestamp}'),
+          pw.Text('Location: ${incident.location}'),
+          pw.Text('Receipt: ${cloudIncident['receiptId'] ?? incident.hash}'),
+          pw.SizedBox(height: 18),
+          pw.Header(level: 1, text: 'Evidence'),
+          if (manifests.isEmpty)
+            pw.Text('No evidence manifest is registered for this incident.')
+          else
+            for (final manifest in manifests)
+              ...((manifest['items'] as List<dynamic>?) ?? []).map(
+                (item) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 8),
+                  child: pw.Text(
+                    '${item['fileType']} | ${item['fileName']}\n'
+                    'SHA-256: ${item['sha256Digest']}\n'
+                    'Size: ${item['fileSizeBytes']} bytes',
+                  ),
+                ),
+              ),
         ],
       ),
     );
+
+    try {
+      await Printing.layoutPdf(onLayout: (_) => document.save());
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not export dossier: $error')),
+        );
+      }
+    }
   }
 
   @override
@@ -325,7 +421,7 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
                         child: Row(
                           children: [
                             GestureDetector(
-                              onTap: () => _togglePlay(inc.id),
+                              onTap: () => _togglePlay(inc, safety),
                               child: Container(
                                 width: 34,
                                 height: 34,
@@ -423,7 +519,16 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
                                 color: AppColors.primary,
                               ),
                             ),
-                            onPressed: () => _showExportDossier(context, inc, safety),
+                            onPressed: () => _showExportDossier(inc, safety),
+                          ),
+                          IconButton(
+                            tooltip: 'Open video evidence',
+                            icon: const Icon(
+                              Icons.videocam,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            onPressed: () => _openVideo(inc, safety),
                           ),
                         ],
                       ),
@@ -438,5 +543,11 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
   }
 }

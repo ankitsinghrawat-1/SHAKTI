@@ -3,8 +3,8 @@ const { z } = require('zod');
 const CreateIncidentSchema = z.object({
   incidentId: z.string().min(1, 'Incident ID is required'),
   source: z.string().default('appSosButton'),
-  latitude: z.number().min(-90).max(90, 'Latitude must be between -90 and 90'),
-  longitude: z.number().min(-180).max(180, 'Longitude must be between -180 and 180'),
+  latitude: z.number().min(-90).max(90, 'Latitude must be between -90 and 90').optional(),
+  longitude: z.number().min(-180).max(180, 'Longitude must be between -180 and 180').optional(),
   accuracy: z.number().nonnegative().optional(),
   speed: z.number().nonnegative().optional(),
   severity: z.string().default('Urgent'),

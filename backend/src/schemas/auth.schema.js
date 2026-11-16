@@ -12,7 +12,13 @@ const LoginSchema = z.object({
   pin: z.string().regex(/^\d{4}$/, 'Security PIN must be exactly 4 numeric digits'),
 });
 
+const VerifyPhoneSchema = z.object({
+  phone: z.string().trim().min(5, 'Phone number must have at least 5 digits'),
+  code: z.string().regex(/^\d{4,8}$/, 'Verification code must be numeric'),
+});
+
 module.exports = {
   RegisterSchema,
   LoginSchema,
+  VerifyPhoneSchema,
 };

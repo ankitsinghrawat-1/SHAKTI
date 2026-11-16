@@ -14,26 +14,41 @@ const userRepo = require('../repositories/user.repository');
 const incidentRepo = require('../repositories/incident.repository');
 const guardianRepo = require('../repositories/guardian.repository');
 const evidenceRepo = require('../repositories/evidence.repository');
+const storageService = require('../services/storage.service');
 const hazardRepo = require('../repositories/hazard.repository');
 const outboxService = require('../services/outbox.service');
 const realtimeHub = require('../websocket/server');
 const config = require('../config');
+const pool = require('../db/client');
+const otpService = require('../services/otp.service');
 
 // 1. Health & Telemetry Check
-router.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'UP',
-    service: 'SHAKTI Unified Safety Backend (Zero-Flaw Production Core)',
-    version: '2.0.0',
-    timestamp: new Date().toISOString(),
-    metrics: {
-      activeIncidents: store.state.incidents.filter(i => i.status !== 'RESOLVED').length,
-      totalIncidents: store.state.incidents.length,
-      totalUsers: store.state.users.length,
-      totalGuardians: store.state.guardians.length,
-      outboxQueued: store.state.deliveryAttempts.filter(d => d.status === 'QUEUED').length,
-    },
-  });
+router.get('/health', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM incidents WHERE status <> 'RESOLVED') AS active_incidents,
+         (SELECT COUNT(*) FROM incidents) AS total_incidents,
+         (SELECT COUNT(*) FROM users) AS total_users,
+         (SELECT COUNT(*) FROM guardians) AS total_guardians`,
+    );
+    const counts = result.rows[0];
+    res.status(200).json({
+      status: 'UP',
+      service: 'SHAKTI Unified Safety Backend (Zero-Flaw Production Core)',
+      version: '2.0.0',
+      timestamp: new Date().toISOString(),
+      metrics: {
+        activeIncidents: Number(counts.active_incidents),
+        totalIncidents: Number(counts.total_incidents),
+        totalUsers: Number(counts.total_users),
+        totalGuardians: Number(counts.total_guardians),
+        outboxQueued: store.state.deliveryAttempts.filter(d => d.status === 'QUEUED').length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // 2. Auth: Register
@@ -46,11 +61,19 @@ router.post('/auth/register', validate(schemas.RegisterSchema), async (req, res,
     }
 
     const user = await userRepo.createUser({ name, phone, email, pin });
-    const token = userRepo.generateToken(user, false);
+    try {
+      await otpService.sendVerification(user.phone);
+    } catch (err) {
+      await userRepo.deletePendingUser(user.id);
+      throw err;
+    }
 
     res.status(201).json({
-      message: 'User registered successfully.',
-      token,
+      message: config.demoOtpEnabled
+        ? 'Demo verification code generated. Check the backend console.'
+        : 'Verification code sent to the registered phone number.',
+      verificationRequired: true,
+      demoOtp: config.demoOtpEnabled ? config.demoOtpCode : undefined,
       user: {
         id: user.id,
         name: user.name,
@@ -64,7 +87,57 @@ router.post('/auth/register', validate(schemas.RegisterSchema), async (req, res,
   }
 });
 
-// 3. Auth: Login & Duress Detection
+// 3. Auth: Verify phone ownership
+router.post('/auth/verify-phone', validate(schemas.VerifyPhoneSchema), async (req, res, next) => {
+  try {
+    const { phone, code } = req.body;
+    const user = await userRepo.findByPhone(phone);
+    if (!user || user.isActive) {
+      return res.status(400).json({ error: 'No pending phone verification was found.' });
+    }
+
+    const approved = await otpService.checkVerification(user.phone, code);
+    if (!approved) {
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
+    }
+
+    const verifiedUser = await userRepo.markPhoneVerified(user.id);
+    const token = userRepo.generateToken(verifiedUser, false);
+    return res.status(200).json({
+      message: 'Phone number verified successfully.',
+      token,
+      verificationRequired: false,
+      user: {
+        id: verifiedUser.id,
+        name: verifiedUser.name,
+        phone: verifiedUser.phone,
+        email: verifiedUser.email,
+        shieldId: verifiedUser.shieldId,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 4. Auth: Resend phone verification code
+router.post('/auth/resend-phone-code', validate(schemas.RegisterSchema.pick({ phone: true })), async (req, res, next) => {
+  try {
+    const user = await userRepo.findByPhone(req.body.phone);
+    if (!user || user.isActive) {
+      return res.status(400).json({ error: 'No pending phone verification was found.' });
+    }
+    await otpService.sendVerification(user.phone);
+    return res.status(200).json({
+      message: 'A new verification code was sent.',
+      verificationRequired: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 5. Auth: Login & Duress Detection
 router.post('/auth/login', validate(schemas.LoginSchema), async (req, res, next) => {
   try {
     const { identifier, pin } = req.body;
@@ -107,6 +180,12 @@ router.post('/auth/login', validate(schemas.LoginSchema), async (req, res, next)
     const user = await userRepo.findByIdentifier(identifier);
     if (!user) {
       return res.status(401).json({ error: 'Invalid phone, email or 4-digit PIN.' });
+    }
+    if (!user.isActive || !user.phoneVerifiedAt) {
+      return res.status(403).json({
+        error: 'Phone number verification is required before login.',
+        code: 'PHONE_NOT_VERIFIED',
+      });
     }
 
     const isMatch = await userRepo.verifyPin(user, pin);
@@ -222,7 +301,20 @@ router.post('/incidents', requireAuth, validate(schemas.CreateIncidentSchema), a
   }
 });
 
-// 8. Incidents: Get Status
+// 8. Incidents: Get Authenticated User History
+router.get('/incidents', requireAuth, async (req, res, next) => {
+  try {
+    const incidents = await incidentRepo.getAll(req.user.id);
+    return res.status(200).json({
+      incidents,
+      total: incidents.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 9. Incidents: Get Status
 router.get('/incidents/:id', requireAuth, async (req, res) => {
   const incident = await incidentRepo.findById(req.params.id, req.user.id);
   if (!incident) {
@@ -231,7 +323,7 @@ router.get('/incidents/:id', requireAuth, async (req, res) => {
 
   // Attach location breadcrumbs & evidence summary
   const locationFixCount = await incidentRepo.countLocations(req.params.id, req.user.id);
-  const manifests = await evidenceRepo.getManifestsForIncident(incident.id);
+  const manifests = await evidenceRepo.getManifestsForIncident(incident.id, req.user.id);
 
   res.status(200).json({
     incident: {
@@ -242,7 +334,7 @@ router.get('/incidents/:id', requireAuth, async (req, res) => {
   });
 });
 
-// 9. Incidents: Stream Location Telemetry
+// 10. Incidents: Stream Location Telemetry
 router.post('/incidents/:id/locations', requireAuth, validate(schemas.BatchTelemetrySchema), async (req, res, next) => {
   try {
     const incidentId = req.params.id;
@@ -268,7 +360,7 @@ router.post('/incidents/:id/locations', requireAuth, validate(schemas.BatchTelem
   }
 });
 
-// 10. Incidents: Acknowledge (Guardian / 112 Confirmation)
+// 11. Incidents: Acknowledge (Guardian / 112 Confirmation)
 router.post('/incidents/:id/acknowledgements', requireAuth, validate(schemas.AcknowledgeIncidentSchema), async (req, res, next) => {
   try {
     const incidentId = req.params.id;
@@ -288,7 +380,7 @@ router.post('/incidents/:id/acknowledgements', requireAuth, validate(schemas.Ack
   }
 });
 
-// 11. Incidents: Resolve Emergency with PIN verification
+// 12. Incidents: Resolve Emergency with PIN verification
 router.post('/incidents/:id/resolve', requireAuth, validate(schemas.ResolveIncidentSchema), async (req, res, next) => {
   try {
     const incidentId = req.params.id;
@@ -317,10 +409,13 @@ router.post('/incidents/:id/resolve', requireAuth, validate(schemas.ResolveIncid
   }
 });
 
-// 12. Evidence: Register Manifest (SHA-256 Verified)
-router.post('/evidence/manifest', validate(schemas.EvidenceManifestSchema), async (req, res, next) => {
+// 13. Evidence: Register Manifest (SHA-256 Verified)
+router.post('/evidence/manifest', requireAuth, validate(schemas.EvidenceManifestSchema), async (req, res, next) => {
   try {
-    const sealed = await evidenceRepo.registerManifest(req.body);
+    const sealed = await evidenceRepo.registerManifest(req.user.id, req.body);
+    if (!sealed) {
+      return res.status(404).json({ error: 'Incident record not found.' });
+    }
     res.status(201).json({
       message: 'Evidence manifest cryptographically registered and sealed.',
       manifestId: sealed.manifestId,
@@ -333,7 +428,70 @@ router.post('/evidence/manifest', validate(schemas.EvidenceManifestSchema), asyn
   }
 });
 
-// 13. Public Safety: Nearby Alerts
+// 14. Evidence: Authorize a direct upload to the private Supabase bucket
+router.post('/evidence/upload-url', requireAuth, async (req, res, next) => {
+  try {
+    const { incidentId, fileName } = req.body;
+    if (
+      typeof incidentId !== 'string' ||
+      incidentId.length === 0 ||
+      typeof fileName !== 'string' ||
+      fileName.length === 0
+    ) {
+      return res.status(400).json({
+        error: 'incidentId and fileName are required.',
+      });
+    }
+
+    const incident = await incidentRepo.findById(incidentId, req.user.id);
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident record not found.' });
+    }
+
+    const upload = await storageService.createEvidenceUploadUrl({
+      userId: req.user.id,
+      incidentId,
+      fileName,
+    });
+    return res.status(201).json(upload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 15. Evidence: Authorize a temporary download URL for owned evidence
+router.get('/evidence/incidents/:incidentId/download-url', requireAuth, async (req, res, next) => {
+  try {
+    const incident = await incidentRepo.findById(req.params.incidentId, req.user.id);
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident record not found.' });
+    }
+
+    const fileType = req.query.fileType ? String(req.query.fileType) : undefined;
+    const item = await evidenceRepo.getFirstItemForIncident(
+      req.params.incidentId,
+      req.user.id,
+      fileType,
+    );
+    if (!item || !item.fileReference) {
+      return res.status(404).json({ error: 'Requested evidence file was not found.' });
+    }
+
+    const download = await storageService.createEvidenceDownloadUrl(
+      item.fileReference,
+    );
+    return res.status(200).json({
+      ...download,
+      fileName: item.fileName,
+      fileType: item.fileType,
+      sha256Digest: item.sha256Digest,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 16. Public Safety: Nearby Alerts
 router.get('/nearby-alerts', async (req, res) => {
   const alerts = await hazardRepo.getNearbyAlerts();
   res.status(200).json({
@@ -342,10 +500,10 @@ router.get('/nearby-alerts', async (req, res) => {
   });
 });
 
-// 14. Community Hazard Reports
-router.post('/reports/hazard', validate(schemas.HazardReportSchema), async (req, res, next) => {
+// 17. Community Hazard Reports
+router.post('/reports/hazard', optionalAuth, validate(schemas.HazardReportSchema), async (req, res, next) => {
   try {
-    const report = await hazardRepo.createHazardReport(req.body);
+    const report = await hazardRepo.createHazardReport(req.body, req.user?.id);
     res.status(201).json({
       message: 'Community hazard report submitted and published to local radius.',
       report,
@@ -355,10 +513,10 @@ router.post('/reports/hazard', validate(schemas.HazardReportSchema), async (req,
   }
 });
 
-// 15. Customer Feedback
-router.post('/feedback', validate(schemas.FeedbackSchema), async (req, res, next) => {
+// 18. Customer Feedback
+router.post('/feedback', optionalAuth, validate(schemas.FeedbackSchema), async (req, res, next) => {
   try {
-    const saved = await hazardRepo.recordFeedback(req.body);
+    const saved = await hazardRepo.recordFeedback(req.body, req.user?.id);
     res.status(201).json({
       message: 'Feedback received. Thank you for contributing to safety.',
       id: saved.id,
