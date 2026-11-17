@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -41,6 +42,17 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
       setState(() => _currentlyPlayingId = incident.id);
     }
 
+    // 1. Fallback to in-memory captured audio bytes if available
+    final localAudioBytes = safety.mediaService.audioItem?.bytes;
+    if (localAudioBytes != null && localAudioBytes.isNotEmpty) {
+      try {
+        await _audioPlayer.play(BytesSource(localAudioBytes));
+        return;
+      } catch (e) {
+        debugPrint('[EvidenceVault] In-memory audio playback fallback failed: $e');
+      }
+    }
+
     final response = await safety.apiService.getEvidenceDownloadUrl(
       incidentId: incident.id,
       token: safety.authToken,
@@ -76,6 +88,24 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
     IncidentRecord incident,
     SafetyProvider safety,
   ) async {
+    final localFront = safety.mediaService.frontVideoItem?.fileReference;
+    final localRear = safety.mediaService.rearVideoItem?.fileReference;
+    final candidatePath = (localFront != null && !localFront.startsWith('vault/'))
+        ? localFront
+        : ((localRear != null && !localRear.startsWith('vault/')) ? localRear : null);
+    if (candidatePath != null && candidatePath.isNotEmpty && File(candidatePath).existsSync()) {
+      final controller = VideoPlayerController.file(File(candidatePath));
+      try {
+        await controller.initialize();
+        if (mounted) {
+          await _showVideoDialog(controller);
+          return;
+        }
+      } catch (e) {
+        debugPrint('[EvidenceVault] Local video error: $e');
+      }
+    }
+
     final response = await safety.apiService.getEvidenceDownloadUrl(
       incidentId: incident.id,
       fileType: 'VIDEO',
@@ -102,6 +132,18 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
         await controller.dispose();
         return;
       }
+      await _showVideoDialog(controller);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not play video evidence: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showVideoDialog(VideoPlayerController controller) async {
+    try {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -135,7 +177,10 @@ class _EvidenceVaultScreenState extends State<EvidenceVaultScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () {
+                controller.pause();
+                Navigator.of(dialogContext).pop();
+              },
               child: const Text('Close'),
             ),
           ],

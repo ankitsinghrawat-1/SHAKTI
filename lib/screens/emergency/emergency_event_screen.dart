@@ -5,6 +5,7 @@ import '../../providers/safety_provider.dart';
 import '../../services/emergency_media_service.dart';
 import '../../services/guardian_notification_service.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_decorations.dart';
 import '../../theme/app_typography.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/tactile_button.dart';
@@ -39,6 +40,7 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
   }
 
   void _showCancelConfirmation(BuildContext context, SafetyProvider safety) {
+    final pinCtrl = TextEditingController(text: safety.userPin);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -48,11 +50,51 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
           safety.strings.isHindi ? 'एसओएस अलर्ट समाप्त करें?' : 'Stand Down Emergency SOS?',
           style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.w800),
         ),
-        content: Text(
-          safety.strings.isHindi
-              ? 'क्या आप सुरक्षित हैं? एसओएस समाप्त करने से आपके अभिभावकों को सुरक्षित स्थिति की सूचना भेजी जाएगी और साक्ष्य वॉल्ट में सील कर दिया जाएगा।'
-              : 'Confirm you are safe. Standing down will send a safe resolution alert to your circle and seal captured recordings in the Evidence Vault.',
-          style: AppTypography.bodySm.copyWith(height: 1.45),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              safety.strings.isHindi
+                  ? 'क्या आप सुरक्षित हैं? एसओएस समाप्त करने के लिए अपना 4-अंकीय सुरक्षा पिन दर्ज करें।'
+                  : 'Confirm you are safe. Enter your 4-digit security PIN to stand down and seal evidence.',
+              style: AppTypography.bodySm.copyWith(height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: safety.strings.isHindi ? '4-अंकीय पिन' : '4-Digit Security PIN',
+                hintText: 'e.g. 1234 or 0000 (Duress)',
+                border: const OutlineInputBorder(borderRadius: AppDecorations.brDefault),
+                prefixIcon: const Icon(Icons.lock_outline, size: 18),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.shield_outlined, size: 14, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      safety.strings.isHindi
+                          ? 'एंटी-दबाव प्रोटोकॉल: जबरदस्ती में 0000 दर्ज करने से चुपचाप पुलिस को सूचना जाती है।'
+                          : 'Anti-Coercion Protocol: Entering 0000 fakes deactivation while alerting police silently.',
+                      style: const TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -68,18 +110,36 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
             ),
-            onPressed: () {
-              safety.cancelSimulatedSos();
+            onPressed: () async {
+              final enteredPin = pinCtrl.text.trim().isEmpty ? safety.userPin : pinCtrl.text.trim();
+              final isDuress = enteredPin == '0000';
+
               Navigator.of(ctx).pop();
               Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(safety.strings.isHindi
-                      ? 'एसओएस समाप्त किया गया। स्थिति: सुरक्षित।'
-                      : 'SOS Stood Down. Evidence sealed and guardians notified of safe resolution.'),
-                  backgroundColor: AppColors.emeraldSafe,
-                ),
-              );
+
+              if (isDuress) {
+                await safety.cancelSimulatedSos(pin: '0000', reason: 'COVERT_DURESS_TRIGGER');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('SOS Stood Down (Silent Duress Signal Broadcast to ERSS-112)'),
+                      backgroundColor: AppColors.slateCharcoal,
+                    ),
+                  );
+                }
+              } else {
+                await safety.cancelSimulatedSos(pin: enteredPin);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(safety.strings.isHindi
+                          ? 'एसओएस समाप्त किया गया। स्थिति: सुरक्षित।'
+                          : 'SOS Stood Down. Evidence sealed and guardians notified of safe resolution.'),
+                      backgroundColor: AppColors.emeraldSafe,
+                    ),
+                  );
+                }
+              }
             },
             child: Text(
               safety.strings.isHindi ? 'हाँ, मैं सुरक्षित हूँ' : "Yes, I'm Safe",
@@ -582,12 +642,48 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
                         const SizedBox(height: 4),
                         if (locService.isLocationPermissionGranted && locService.currentLocation != null) ...[
                           Text(
-                            '${locService.currentLocation!.latitude.toStringAsFixed(4)}° N, ${locService.currentLocation!.longitude.toStringAsFixed(4)}° E',
+                            '${locService.currentLocation!.latitude >= 0 ? locService.currentLocation!.latitude.toStringAsFixed(6) : (-locService.currentLocation!.latitude).toStringAsFixed(6)}° ${locService.currentLocation!.latitude >= 0 ? 'N' : 'S'}, '
+                            '${locService.currentLocation!.longitude >= 0 ? locService.currentLocation!.longitude.toStringAsFixed(6) : (-locService.currentLocation!.longitude).toStringAsFixed(6)}° ${locService.currentLocation!.longitude >= 0 ? 'E' : 'W'}',
                             style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                           ),
                           Text(
-                            '±${locService.currentLocation!.accuracy}m • Device location',
+                            '±${locService.currentLocation!.accuracy.toStringAsFixed(1)}m • ${locService.currentLocation!.provider.contains('GNSS') ? 'Live GNSS Fix' : 'Network/IP Fix'}',
                             style: const TextStyle(color: AppColors.emeraldSafe, fontSize: 11, fontWeight: FontWeight.w700),
+                          ),
+                          if (locService.currentAddress.isNotEmpty && locService.currentAddress != 'Acquiring live location...')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                locService.currentAddress,
+                                style: TextStyle(
+                                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.slateSecondary,
+                                  fontSize: 10,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ] else if (locService.isLocationPermissionGranted && locService.currentLocation == null) ...[
+                          Row(
+                            children: [
+                              const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  strings.isHindi ? 'जीपीएस लॉक प्राप्त हो रहा है...' : 'Acquiring GNSS Fix...',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ] else ...[
                           Text(
@@ -1110,7 +1206,7 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '${crumb.latitude.toStringAsFixed(4)}°N, ${crumb.longitude.toStringAsFixed(4)}°E • Acc: ±${crumb.accuracy}m',
+                                  '${crumb.latitude.toStringAsFixed(6)}°N, ${crumb.longitude.toStringAsFixed(6)}°E • Acc: ±${crumb.accuracy.toStringAsFixed(1)}m',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.slateSecondary,
@@ -1197,10 +1293,37 @@ class _EmergencyEventScreenState extends State<EmergencyEventScreen>
                                     fontSize: 11,
                                   ),
                                 ),
+                                if (disp.messagePayload != null && disp.messagePayload!.isNotEmpty) ...[
+                                  const SizedBox(height: 5),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.04),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '💬 "${disp.messagePayload}"',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontStyle: FontStyle.italic,
+                                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.slateSecondary,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                                 if (disp.failureReason != null)
-                                  Text(
-                                    disp.failureReason!,
-                                    style: const TextStyle(color: AppColors.primary, fontSize: 10),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 3),
+                                    child: Text(
+                                      disp.failureReason!,
+                                      style: const TextStyle(color: AppColors.primary, fontSize: 10),
+                                    ),
                                   ),
                               ],
                             ),

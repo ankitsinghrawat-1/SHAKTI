@@ -2,9 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/safety_provider.dart';
+import '../../services/location_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_decorations.dart';
 import '../../theme/app_typography.dart';
+import '../../utils/map_launcher.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/status_badge.dart';
 import '../../widgets/tactile_button.dart';
@@ -30,6 +32,18 @@ class _RadarScreenState extends State<RadarScreen>
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final safety = Provider.of<SafetyProvider>(context, listen: false);
+      if (safety.locationService.currentLocation == null) {
+        safety.locationService.acquireCurrentLocation().then((loc) {
+          if (loc != null) {
+            safety.refreshNearbyHavens();
+          }
+        });
+      } else {
+        safety.refreshNearbyHavens();
+      }
+    });
   }
 
   @override
@@ -117,27 +131,46 @@ class _RadarScreenState extends State<RadarScreen>
                 ),
               ),
               const SizedBox(height: 14),
-              _routeStep('1', 'Head North on Kasturba Gandhi Marg', 'Well-lit main corridor with wide sidewalk', true),
-              _routeStep('2', 'Turn right toward Outer Circle', 'PCR Patrol Unit #14 stationed at junction', true),
-              _routeStep('3', 'Arrive at destination', haven.address, false),
+              _routeStep(
+                '1',
+                safety.strings.isHindi ? 'वर्तमान स्थान से प्रस्थान करें' : 'Depart from current live location',
+                safety.locationService.currentAddress.isNotEmpty &&
+                        safety.locationService.currentAddress != 'Acquiring live location...'
+                    ? safety.locationService.currentAddress
+                    : 'Active Safety Corridor',
+                true,
+              ),
+              _routeStep(
+                '2',
+                safety.strings.isHindi ? '${haven.name} की ओर बढ़ें' : 'Head toward ${haven.name}',
+                safety.strings.isHindi
+                    ? 'रोशन सड़क मार्ग • पीसीआर गश्ती यूनिट व सीसीटीवी सक्रिय'
+                    : 'Well-lit arterial thoroughfare • Active police patrol beat & CCTV',
+                true,
+              ),
+              _routeStep('3', safety.strings.isHindi ? 'गंतव्य पर पहुंचें' : 'Arrive at haven destination', haven.address, false),
               const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
                 child: TactileButton(
-                  label: safety.strings.isHindi ? 'नेविगेशन शुरू करें (मॉक)' : 'Start Guided Walk',
+                  label: safety.strings.isHindi ? 'गूगल मैप्स में रूट खोलें ↗' : 'Start Route in Google Maps ↗',
                   style: TactileButtonStyle.primaryCrimson,
                   onPressed: () {
                     Navigator.of(sheetCtx).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        backgroundColor: AppColors.primary,
-                        content: Text(
-                          safety.strings.isHindi
-                              ? '${haven.name} के लिए सुरक्षित मार्ग सक्रिय हुआ।'
-                              : 'Guided walk active toward ${haven.name}. Guardians notified of destination.',
-                        ),
-                      ),
-                    );
+                    if (haven.latitude != 0.0 && haven.longitude != 0.0) {
+                      MapLauncher.openDirections(
+                        destLat: haven.latitude,
+                        destLng: haven.longitude,
+                        destName: haven.name,
+                      );
+                    } else {
+                      final loc = safety.locationService.currentLocation;
+                      if (loc != null) {
+                        MapLauncher.openNearbySearch(loc.latitude, loc.longitude, haven.name);
+                      } else {
+                        MapLauncher.openNearbySearch(28.4622, 77.4888, haven.name);
+                      }
+                    }
                   },
                 ),
               ),
@@ -195,6 +228,50 @@ class _RadarScreenState extends State<RadarScreen>
         ),
       ],
     );
+  }
+
+  List<Widget> _buildDynamicRadarBlips(List<SafeHavenModel> havens, LocationPointModel? userLoc) {
+    if (havens.isEmpty) return const [];
+
+    final widgets = <Widget>[];
+    final quadrantPositions = [
+      {'top': 38.0, 'right': 45.0, 'color': AppColors.secondary}, // NE
+      {'bottom': 35.0, 'left': 45.0, 'color': AppColors.tertiary}, // SW
+      {'bottom': 45.0, 'right': 55.0, 'color': AppColors.emeraldSafe}, // SE
+      {'top': 42.0, 'left': 45.0, 'color': AppColors.primary}, // NW
+    ];
+
+    for (int i = 0; i < havens.take(4).length; i++) {
+      final h = havens[i];
+      final pos = quadrantPositions[i % quadrantPositions.length];
+      final words = h.name.split(' ');
+      final shortName = words.length > 2 ? '${words[0]} ${words[1]}' : h.name;
+      final label = '$shortName ${h.distance}';
+
+      widgets.add(
+        Positioned(
+          top: pos['top'] as double?,
+          bottom: pos['bottom'] as double?,
+          left: pos['left'] as double?,
+          right: pos['right'] as double?,
+          child: GestureDetector(
+            onTap: () {
+              if (h.latitude != 0.0 && h.longitude != 0.0) {
+                MapLauncher.openDirections(
+                  destLat: h.latitude,
+                  destLng: h.longitude,
+                  destName: h.name,
+                );
+              } else if (userLoc != null) {
+                MapLauncher.openNearbySearch(userLoc.latitude, userLoc.longitude, h.name);
+              }
+            },
+            child: _blipPin(label, pos['color'] as Color),
+          ),
+        ),
+      );
+    }
+    return widgets;
   }
 
   @override
@@ -256,9 +333,27 @@ class _RadarScreenState extends State<RadarScreen>
                   ),
                 ),
                 const SizedBox(width: 8),
-                const StatusBadge(
-                  label: 'RADAR ACTIVE',
-                  type: StatusBadgeType.emerald,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: strings.isHindi ? 'नजदीकी अस्पताल व पुलिस रिफ्रेश करें' : 'Refresh Real Facilities',
+                      icon: safety.isLoadingHavens
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                            )
+                          : const Icon(Icons.refresh, size: 20, color: AppColors.primary),
+                      onPressed: safety.isLoadingHavens
+                          ? null
+                          : () => safety.refreshNearbyHavens(force: true),
+                    ),
+                    const StatusBadge(
+                      label: 'RADAR ACTIVE',
+                      type: StatusBadgeType.emerald,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -322,7 +417,10 @@ class _RadarScreenState extends State<RadarScreen>
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                'Zone 4 • Barakhamba Sector',
+                                safety.locationService.currentAddress.isNotEmpty &&
+                                        safety.locationService.currentAddress != 'Acquiring live location...'
+                                    ? safety.locationService.currentAddress
+                                    : 'Live Corridor • Active GPS Fix',
                                 style: AppTypography.labelMd.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -400,27 +498,50 @@ class _RadarScreenState extends State<RadarScreen>
                           ),
                         ),
 
-                        // Blip 1: Police Station (Top Right)
-                        Positioned(
-                          top: 45,
-                          right: 65,
-                          child: _blipPin('Police 250m', AppColors.secondary),
-                        ),
-
-                        // Blip 2: Hospital (Bottom Left)
-                        Positioned(
-                          bottom: 35,
-                          left: 55,
-                          child: _blipPin('RML 650m', AppColors.tertiary),
-                        ),
-
-                        // Blip 3: Safe Zone Metro (Bottom Right)
-                        Positioned(
-                          bottom: 50,
-                          right: 75,
-                          child: _blipPin('Metro 300m', AppColors.emeraldSafe),
+                        // Dynamic Real Havens Blips on Radar Canvas
+                        ..._buildDynamicRadarBlips(
+                          filteredHavens,
+                          safety.locationService.currentLocation,
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.map_rounded, size: 18),
+                      label: Text(
+                        strings.isHindi
+                            ? 'गूगल मैप्स में नजदीकी पुलिस व अस्पताल खोलें ↗'
+                            : 'Open Nearby Police & Hospitals in Google Maps ↗',
+                        style: AppTypography.labelSm.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onPressed: () {
+                        final loc = safety.locationService.currentLocation;
+                        if (loc != null) {
+                          MapLauncher.openNearbySearch(loc.latitude, loc.longitude, 'police station hospital emergency');
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                strings.isHindi ? 'लाइव जीपीएस प्राप्त हो रहा है...' : 'Acquiring live GPS fix...',
+                              ),
+                            ),
+                          );
+                        }
+                      },
                     ),
                   ),
                 ],
@@ -446,6 +567,39 @@ class _RadarScreenState extends State<RadarScreen>
             ),
 
             const SizedBox(height: 16),
+
+            if (safety.isLoadingHavens) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        strings.isHindi
+                            ? 'लाइव नजदीकी अस्पताल व पुलिस स्टेशन लोड हो रहे हैं...'
+                            : 'Discovering live nearby hospitals & police stations...',
+                        style: AppTypography.labelSm.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             // Havens List
             ...filteredHavens.map((haven) {
@@ -560,11 +714,8 @@ class _RadarScreenState extends State<RadarScreen>
                               style: AppTypography.labelSm.copyWith(fontWeight: FontWeight.w700),
                             ),
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Simulated call to ${haven.name} (Dialer prototype).'),
-                                ),
-                              );
+                              final phone = haven.phone ?? (isPolice ? '112' : '108');
+                              MapLauncher.dialNumber(phone);
                             },
                           ),
                           const SizedBox(width: 8),

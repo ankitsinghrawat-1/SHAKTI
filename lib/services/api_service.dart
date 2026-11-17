@@ -159,6 +159,17 @@ class ApiService {
     );
   }
 
+  /// Remove Trusted Guardian (`DELETE /guardians/:id`)
+  Future<ApiResponse<Map<String, dynamic>>> deleteGuardian({
+    required String guardianId,
+    String? token,
+  }) async {
+    return _sendDelete(
+      endpoint: '/guardians/$guardianId',
+      token: token,
+    );
+  }
+
   /// Create Emergency Incident (`POST /incidents`)
   /// Uses idempotency key to prevent accidental duplicate dispatches on network retry.
   Future<ApiResponse<Map<String, dynamic>>> createIncident({
@@ -194,6 +205,23 @@ class ApiService {
     String? token,
   }) async {
     return _sendGet(endpoint: '/incidents/$incidentId', token: token);
+  }
+
+  /// Resolve Emergency Incident with PIN verification (`POST /incidents/:id/resolve`)
+  Future<ApiResponse<Map<String, dynamic>>> resolveIncident({
+    required String incidentId,
+    required String pin,
+    String reason = 'Emergency resolved safely by user',
+    String? token,
+  }) async {
+    return _sendPost(
+      endpoint: '/incidents/$incidentId/resolve',
+      token: token,
+      body: {
+        'pin': pin,
+        'reason': reason,
+      },
+    );
   }
 
   /// Fetch authenticated user's cloud incident history.
@@ -436,6 +464,33 @@ class ApiService {
       );
     } finally {
       _inFlightRequests.remove(dedupeKey);
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> _sendDelete({
+    required String endpoint,
+    String? token,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final response = await _client
+          .delete(
+            uri,
+            headers: ApiConfig.buildHeaders(token: token),
+          )
+          .timeout(ApiConfig.requestTimeout);
+
+      return _handleResponse(response);
+    } on TimeoutException {
+      return ApiResponse.failure(
+        errorMessage: 'Request to $endpoint timed out after ${ApiConfig.requestTimeout.inSeconds}s.',
+        isOffline: true,
+      );
+    } catch (e) {
+      return ApiResponse.failure(
+        errorMessage: 'Network error connecting to $endpoint: $e',
+        isOffline: true,
+      );
     }
   }
 

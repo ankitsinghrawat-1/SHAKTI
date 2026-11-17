@@ -57,6 +57,29 @@ router.post('/auth/register', validate(schemas.RegisterSchema), async (req, res,
     const { name, phone, email, pin } = req.body;
     const existing = await userRepo.findByPhone(phone);
     if (existing) {
+      if (!existing.isActive && !existing.phoneVerifiedAt) {
+        const updated = await userRepo.updatePendingUser({
+          id: existing.id,
+          name,
+          email,
+          pin,
+        });
+        await otpService.sendVerification(existing.phone);
+        return res.status(200).json({
+          message: config.demoOtpEnabled
+            ? 'Demo verification code generated. Check the backend console.'
+            : 'Verification code sent to the registered phone number.',
+          verificationRequired: true,
+          demoOtp: config.demoOtpEnabled ? config.demoOtpCode : undefined,
+          user: {
+            id: existing.id,
+            name: updated ? updated.name : existing.name,
+            phone: existing.phone,
+            email: updated ? updated.email : existing.email,
+            shieldId: existing.shieldId,
+          },
+        });
+      }
       return res.status(409).json({ error: 'User with this phone number already exists.' });
     }
 
@@ -182,9 +205,14 @@ router.post('/auth/login', validate(schemas.LoginSchema), async (req, res, next)
       return res.status(401).json({ error: 'Invalid phone, email or 4-digit PIN.' });
     }
     if (!user.isActive || !user.phoneVerifiedAt) {
+      try {
+        await otpService.sendVerification(user.phone);
+      } catch (_) {}
       return res.status(403).json({
         error: 'Phone number verification is required before login.',
         code: 'PHONE_NOT_VERIFIED',
+        phone: user.phone,
+        demoOtp: config.demoOtpEnabled ? config.demoOtpCode : undefined,
       });
     }
 
@@ -250,6 +278,19 @@ router.post('/guardians', requireAuth, validate(schemas.AddGuardianSchema), asyn
   try {
     const guardian = await guardianRepo.add(req.user.id, req.body);
     res.status(201).json({ guardian });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 6b. Guardians: Delete
+router.delete('/guardians/:id', requireAuth, async (req, res, next) => {
+  try {
+    const deleted = await guardianRepo.delete(req.params.id, req.user.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Guardian not found or not owned by user.' });
+    }
+    res.status(200).json({ message: 'Guardian removed successfully.' });
   } catch (err) {
     next(err);
   }

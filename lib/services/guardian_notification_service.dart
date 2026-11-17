@@ -22,6 +22,7 @@ class GuardianDispatchRecord {
   final GuardianDeliveryChannel channel;
   final String dispatchTimestamp;
   final String mapLink;
+  final String? messagePayload;
   String? lastUpdate;
   String? failureReason;
   final bool isOfficialAgency;
@@ -35,6 +36,7 @@ class GuardianDispatchRecord {
     required this.channel,
     required this.dispatchTimestamp,
     required this.mapLink,
+    this.messagePayload,
     this.lastUpdate,
     this.failureReason,
     this.isOfficialAgency = false,
@@ -90,6 +92,7 @@ class GuardianNotificationService extends ChangeNotifier {
     required double longitude,
     required String userName,
     required bool isNetworkAvailable,
+    List<Map<String, dynamic>>? customGuardians,
   }) {
     _isNetworkAvailable = isNetworkAvailable;
     _dispatches.clear();
@@ -97,6 +100,12 @@ class GuardianNotificationService extends ChangeNotifier {
     final now = DateTime.now();
     final timeStr = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
     final mapLink = 'https://maps.google.com/?q=$latitude,$longitude';
+    final alertMessage = formatEmergencyMessagePayload(
+      userName: userName,
+      latitude: latitude,
+      longitude: longitude,
+      incidentId: incidentId,
+    );
 
     // 1. National Police ERSS-112 Dispatch
     _dispatches.add(
@@ -109,61 +118,62 @@ class GuardianNotificationService extends ChangeNotifier {
         channel: GuardianDeliveryChannel.pushNotification,
         dispatchTimestamp: timeStr,
         mapLink: mapLink,
+        messagePayload: 'POLICE BROADCAST: Distress alert from $userName. Live GNSS: $mapLink',
         lastUpdate: isNetworkAvailable ? 'Connected to PCR unit #14' : 'Network failure',
         failureReason: isNetworkAvailable ? null : 'No cell data available.',
         isOfficialAgency: true,
       ),
     );
 
-    // 2. Primary Tier 1 Guardian (Mother)
-    _dispatches.add(
-      GuardianDispatchRecord(
-        guardianId: 'g-mother',
-        name: 'Dr. Kavita Sharma',
-        phone: '+91 98112 40292',
-        role: 'Mother • Tier 1 Primary',
-        status: isNetworkAvailable ? GuardianDeliveryStatus.delivered : GuardianDeliveryStatus.failed,
-        channel: GuardianDeliveryChannel.pushNotification,
-        dispatchTimestamp: timeStr,
-        mapLink: mapLink,
-        lastUpdate: isNetworkAvailable ? 'Live link opened • En route (2.1km)' : 'Queued offline',
-        failureReason: isNetworkAvailable ? null : 'Offline queue active.',
-      ),
-    );
+    if (customGuardians != null && customGuardians.isNotEmpty) {
+      for (final g in customGuardians) {
+        final id = g['id']?.toString() ?? 'g-custom';
+        final name = g['name']?.toString() ?? 'Guardian';
+        final rawPhone = g['phone']?.toString() ?? '';
+        final phone = rawPhone.isNotEmpty ? rawPhone : 'Registered Contact';
+        final role = g['role']?.toString() ?? 'Guardian • Tier 2';
+        final isTier1 = role.contains('Tier 1');
 
-    // 3. Secondary Tier 1 Guardian (Sister - SMS Gateway)
-    _dispatches.add(
-      GuardianDispatchRecord(
-        guardianId: 'g-sister',
-        name: 'Priya Sharma',
-        phone: '+91 98112 40293',
-        role: 'Sister • Tier 1 Secondary',
-        status: isNetworkAvailable ? GuardianDeliveryStatus.sent : GuardianDeliveryStatus.failed,
-        channel: GuardianDeliveryChannel.smsGateway,
-        dispatchTimestamp: timeStr,
-        mapLink: mapLink,
-        lastUpdate: isNetworkAvailable ? 'SMS gateway handed off to carrier' : 'SMS gateway offline',
-        failureReason: isNetworkAvailable ? null : 'Carrier timeout.',
-      ),
-    );
-
-    // 4. Community Responders (WhatsApp Business API Mock)
-    _dispatches.add(
-      GuardianDispatchRecord(
-        guardianId: 'g-wa',
-        name: 'Rahul Varma (Guardian Circle)',
-        phone: '+91 98112 40294',
-        role: 'Guardian • Tier 2',
-        status: isNetworkAvailable ? GuardianDeliveryStatus.pending : GuardianDeliveryStatus.failed,
-        channel: GuardianDeliveryChannel.whatsAppBusinessApi,
-        dispatchTimestamp: timeStr,
-        mapLink: mapLink,
-        lastUpdate: isNetworkAvailable
-            ? 'WhatsApp Business API template dispatched (Mock backend)'
-            : 'Delivery failed',
-        failureReason: isNetworkAvailable ? null : 'Internet connection dropped.',
-      ),
-    );
+        _dispatches.add(
+          GuardianDispatchRecord(
+            guardianId: id,
+            name: name,
+            phone: phone,
+            role: role,
+            status: isNetworkAvailable
+                ? (isTier1 ? GuardianDeliveryStatus.delivered : GuardianDeliveryStatus.sent)
+                : GuardianDeliveryStatus.failed,
+            channel: isTier1
+                ? GuardianDeliveryChannel.pushNotification
+                : GuardianDeliveryChannel.smsGateway,
+            dispatchTimestamp: timeStr,
+            mapLink: mapLink,
+            messagePayload: alertMessage,
+            lastUpdate: isNetworkAvailable
+                ? (isTier1 ? 'Live GNSS link opened' : 'SMS alert dispatched')
+                : 'Queued offline',
+            failureReason: isNetworkAvailable ? null : 'Network disconnected.',
+          ),
+        );
+      }
+    } else {
+      // Prompt user to add guardians if account has none yet
+      _dispatches.add(
+        GuardianDispatchRecord(
+          guardianId: 'g-notice',
+          name: 'Personal Guardian Circle',
+          phone: 'No personal contacts added',
+          role: 'Emergency Circle',
+          status: GuardianDeliveryStatus.pending,
+          channel: GuardianDeliveryChannel.smsGateway,
+          dispatchTimestamp: timeStr,
+          mapLink: mapLink,
+          messagePayload: alertMessage,
+          lastUpdate: 'Awaiting guardian setup',
+          failureReason: 'Add trusted contacts in Guardians tab to dispatch real SMS with live location.',
+        ),
+      );
+    }
 
     notifyListeners();
   }

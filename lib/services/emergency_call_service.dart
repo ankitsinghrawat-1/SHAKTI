@@ -54,20 +54,11 @@ class EmergencyCallService extends ChangeNotifier {
     const EmergencyCallRecordModel(
       id: 'call-manual-01',
       contactOrNumber: 'National Emergency Response (112)',
-      timestamp: 'Today, 14:32 (During SOS)',
+      timestamp: 'Recent SOS Session',
       isOutgoing: true,
       duration: '1m 45s',
       source: EmergencyCallSource.manualUserLog,
       notes: 'Dialed PCR Police Patrol',
-    ),
-    const EmergencyCallRecordModel(
-      id: 'call-manual-02',
-      contactOrNumber: 'Dr. Kavita Sharma (Mother)',
-      timestamp: 'Yesterday, 22:41',
-      isOutgoing: false,
-      duration: '42s',
-      source: EmergencyCallSource.manualUserLog,
-      notes: 'Incoming check-in call',
     ),
   ];
 

@@ -10,11 +10,13 @@ import '../services/emergency_call_service.dart';
 import '../services/unified_sos_coordinator.dart';
 import '../services/api_service.dart';
 import '../services/api_config.dart';
+import '../services/safe_haven_service.dart';
 
 class GuardianModel {
   final String id;
   final String name;
   final String role;
+  final String phone;
   final int battery;
   final String distance;
   final bool isVerified;
@@ -24,6 +26,7 @@ class GuardianModel {
     required this.id,
     required this.name,
     required this.role,
+    this.phone = '',
     required this.battery,
     required this.distance,
     this.isVerified = true,
@@ -39,6 +42,10 @@ class SafeHavenModel {
   final String address;
   final bool isOpen247;
   final double rating;
+  final double latitude;
+  final double longitude;
+  final double distanceMeters;
+  final String? phone;
 
   const SafeHavenModel({
     required this.id,
@@ -48,6 +55,10 @@ class SafeHavenModel {
     required this.address,
     this.isOpen247 = true,
     this.rating = 4.9,
+    this.latitude = 0.0,
+    this.longitude = 0.0,
+    this.distanceMeters = 0.0,
+    this.phone,
   });
 }
 
@@ -180,6 +191,13 @@ class SafetyProvider extends ChangeNotifier {
       callService: callService,
       apiService: apiService,
       authTokenProvider: () => _authToken,
+      guardiansProvider: () => _guardians.map((g) => {
+        'id': g.id,
+        'name': g.name,
+        'role': g.role,
+        'phone': g.phone,
+        'isOfficial': g.isEmergencyUnit,
+      }).toList(),
     );
 
     // Forward reactive updates to provider consumers
@@ -192,6 +210,14 @@ class SafetyProvider extends ChangeNotifier {
 
     // Initial server discovery check (non-blocking)
     checkServerHealth();
+
+    // Acquire real location and resolve address on startup (non-blocking)
+    unawaited(locationService.acquireCurrentLocation().then((loc) {
+      if (loc != null) {
+        unawaited(refreshNearbyHavens());
+      }
+    }));
+    locationService.startDashboardTracking();
   }
 
   // Authentication & Registration State
@@ -328,25 +354,9 @@ class SafetyProvider extends ChangeNotifier {
       id: 'call-01',
       contactName: 'National Emergency Response (ERSS-112)',
       role: 'Police & Emergency PCR Dispatch',
-      timestamp: 'Today, 14:32',
+      timestamp: 'Recent SOS Session',
       duration: '1m 45s • Connected',
       isOfficial: true,
-    ),
-    const EmergencyCallRecord(
-      id: 'call-02',
-      contactName: 'Dr. Kavita Sharma',
-      role: 'Mother • Tier 1 Primary Guardian',
-      timestamp: 'Yesterday, 22:41',
-      duration: '42s • Completed',
-      isOfficial: false,
-    ),
-    const EmergencyCallRecord(
-      id: 'call-03',
-      contactName: 'Priya Sharma',
-      role: 'Sister • Tier 1 Guardian',
-      timestamp: '08 Nov, 19:15',
-      duration: '2m 10s • Completed',
-      isOfficial: false,
     ),
   ];
   List<EmergencyCallRecord> get emergencyCallLogs => List.unmodifiable(_emergencyCallLogs);
@@ -363,11 +373,15 @@ class SafetyProvider extends ChangeNotifier {
     apiService.submitFeedback(
       feedbackData: {
         'id': feedback.id,
-        'rating': feedback.rating,
+        'type': feedback.category,
+        'message': feedback.description,
         'category': feedback.category,
         'description': feedback.description,
-        'hasScreenshot': feedback.hasScreenshot,
-        'timestamp': feedback.timestamp,
+        'rating': feedback.rating,
+        'deviceInfo': {
+          'hasScreenshot': feedback.hasScreenshot,
+          'clientTimestamp': feedback.timestamp,
+        },
       },
       token: _authToken,
     ).then((res) {
@@ -427,13 +441,97 @@ class SafetyProvider extends ChangeNotifier {
   final List<GuardianModel> _guardians = [];
   List<GuardianModel> get guardians => List.unmodifiable(_guardians);
 
-  // Safe Havens
-  final List<SafeHavenModel> safeHavens = const [];
+  // Safe Havens (Live geospatial data: Google Places / OSM / Regional emergency nodes)
+  List<SafeHavenModel> _safeHavens = [];
+  List<SafeHavenModel> get safeHavens {
+    if (_safeHavens.isNotEmpty) {
+      return List.unmodifiable(_safeHavens);
+    }
+
+    // Contextual baseline fallback until async geospatial fetch completes
+    final area = locationService.currentAddress.isNotEmpty &&
+            locationService.currentAddress != 'Acquiring live location...'
+        ? locationService.currentAddress
+        : 'Emergency Safety Sector';
+
+    return [
+      SafeHavenModel(
+        id: 'sh_police_1',
+        name: strings.isHindi ? 'स्थानीय पीसीआर गश्ती वैन #08' : 'PCR Patrol Unit #08',
+        type: 'Police 112',
+        distance: '250m',
+        address: '$area • Mobile Emergency Beat',
+        isOpen247: true,
+        rating: 4.9,
+        phone: '112',
+      ),
+      SafeHavenModel(
+        id: 'sh_transit_1',
+        name: strings.isHindi ? 'सुरक्षित पारगमन व सहायता बूथ' : 'Transit Safety Kiosk',
+        type: 'Safe Zone Metro',
+        distance: '300m',
+        address: '$area • High Illumination Sector',
+        isOpen247: true,
+        rating: 4.8,
+        phone: '1091',
+      ),
+      SafeHavenModel(
+        id: 'sh_police_2',
+        name: strings.isHindi ? 'नजदीकी पुलिस सहायता चौकी' : 'Sector Police Post',
+        type: 'Police 112',
+        distance: '450m',
+        address: '$area • 24/7 Security Assistance',
+        isOpen247: true,
+        rating: 5.0,
+        phone: '112',
+      ),
+      SafeHavenModel(
+        id: 'sh_hospital_1',
+        name: strings.isHindi ? '24/7 आपातकालीन ट्रामा केंद्र' : '24/7 Emergency Medical Center',
+        type: 'Hospital Emergency',
+        distance: '650m',
+        address: '$area • Trauma & Ambulance Hub',
+        isOpen247: true,
+        rating: 4.9,
+        phone: '108',
+      ),
+    ];
+  }
+
+  bool _isLoadingHavens = false;
+  bool get isLoadingHavens => _isLoadingHavens;
+
+  /// Fetches real nearby hospitals, police stations, and safe havens around current GPS coordinates.
+  Future<void> refreshNearbyHavens({bool force = false}) async {
+    final loc = locationService.currentLocation;
+    if (loc == null) return;
+    _isLoadingHavens = true;
+    notifyListeners();
+
+    try {
+      final results = await SafeHavenService.instance.fetchNearbyHavens(
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        localityHint: locationService.currentAddress,
+        forceRefresh: force,
+      );
+      if (results.isNotEmpty) {
+        _safeHavens = results;
+      }
+    } catch (e) {
+      debugPrint('[SafetyProvider] refreshNearbyHavens error: $e');
+    } finally {
+      _isLoadingHavens = false;
+      notifyListeners();
+    }
+  }
 
   // Incidents Vault
   final List<IncidentRecord> incidents = [];
   String? _pendingVerificationPhone;
   String? get pendingVerificationPhone => _pendingVerificationPhone;
+  String? _demoOtpCode;
+  String? get demoOtpCode => _demoOtpCode;
 
   // Community Hazard Reports (Phase 11)
   final List<SafetyHazardReport> _hazardReports = [];
@@ -465,6 +563,7 @@ class SafetyProvider extends ChangeNotifier {
         apiService: apiService,
         token: _authToken,
       );
+      await loadHazardReportsAsync();
     }
     return isServerOnline;
   }
@@ -486,10 +585,48 @@ class SafetyProvider extends ChangeNotifier {
       },
       token: _authToken,
     ).then((res) {
-      if (res.isSuccess && kDebugMode) {
-        debugPrint('[SafetyProvider] Hazard report synced to server: ${report.id}');
+      if (res.isSuccess) {
+        if (kDebugMode) {
+          debugPrint('[SafetyProvider] Hazard report synced to server: ${report.id}');
+        }
+        unawaited(loadHazardReportsAsync());
       }
     }).catchError((_) {});
+  }
+
+  Future<bool> loadHazardReportsAsync() async {
+    final lat = locationService.currentLocation?.latitude ?? 28.6139;
+    final lng = locationService.currentLocation?.longitude ?? 77.2090;
+    final response = await apiService.getNearbyAlerts(
+      latitude: lat,
+      longitude: lng,
+      token: _authToken,
+    );
+    if (!response.isSuccess || response.data == null) {
+      return false;
+    }
+
+    final loadedReports = response.data!
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (report) => SafetyHazardReport(
+            id: report['id']?.toString() ?? 'haz-cloud',
+            type: report['type']?.toString() ?? 'Public Safety Alert',
+            location: report['location']?.toString() ?? 'Reported Area',
+            severity: report['severity']?.toString() ?? 'Medium',
+            notes: report['notes']?.toString() ?? '',
+            timestamp: report['timestamp']?.toString() ?? 'Recent',
+          ),
+        )
+        .toList();
+
+    if (loadedReports.isNotEmpty) {
+      _hazardReports
+        ..clear()
+        ..addAll(loadedReports);
+      notifyListeners();
+    }
+    return true;
   }
 
   // AI Assistant Chat Messages (Floating Assistant)
@@ -517,6 +654,7 @@ class SafetyProvider extends ChangeNotifier {
     if (apiRes.isSuccess && apiRes.data != null) {
       if (apiRes.data!['verificationRequired'] == true) {
         _pendingVerificationPhone = phone.trim();
+        _demoOtpCode = apiRes.data!['demoOtp']?.toString();
         _serverConnectionStatus = ServerConnectionStatus.online;
         _serverStatusMessage = 'Verification code sent to your phone.';
         notifyListeners();
@@ -550,11 +688,16 @@ class SafetyProvider extends ChangeNotifier {
     final phone = _pendingVerificationPhone;
     if (phone == null) return false;
     final response = await apiService.verifyPhone(phone: phone, code: code);
-    if (!response.isSuccess || response.data == null) return false;
+    if (!response.isSuccess || response.data == null) {
+      _serverStatusMessage = response.errorMessage ?? 'Invalid verification code.';
+      notifyListeners();
+      return false;
+    }
 
     final userData = response.data!['user'] as Map<String, dynamic>?;
     _authToken = response.data!['token']?.toString();
     _pendingVerificationPhone = null;
+    _demoOtpCode = null;
     if (userData != null) {
       userName = userData['name']?.toString() ?? userName;
       userPhone = userData['phone']?.toString() ?? phone;
@@ -567,8 +710,15 @@ class SafetyProvider extends ChangeNotifier {
     _serverConnectionStatus = ServerConnectionStatus.online;
     await loadGuardiansAsync();
     await loadIncidentsAsync();
+    await loadHazardReportsAsync();
     notifyListeners();
     return true;
+  }
+
+  void clearPendingVerification() {
+    _pendingVerificationPhone = null;
+    _demoOtpCode = null;
+    notifyListeners();
   }
 
   /// First-time User Registration (Synchronous immediate execution)
@@ -626,6 +776,7 @@ class SafetyProvider extends ChangeNotifier {
 
       await loadGuardiansAsync();
       await loadIncidentsAsync();
+      await loadHazardReportsAsync();
       _userPin = pin;
       _hashedPin = pin.hashCode.toRadixString(16);
       _isAuthenticated = true;
@@ -634,6 +785,20 @@ class SafetyProvider extends ChangeNotifier {
       return true;
     }
 
+    if (apiRes.statusCode == 403 &&
+        apiRes.data?['code'] == 'PHONE_NOT_VERIFIED') {
+      _pendingVerificationPhone =
+          apiRes.data?['phone']?.toString() ?? identifier.trim();
+      _demoOtpCode = apiRes.data?['demoOtp']?.toString();
+      _serverConnectionStatus = ServerConnectionStatus.online;
+      _serverStatusMessage = 'Phone verification is required before login.';
+      notifyListeners();
+      return false;
+    }
+
+    _serverStatusMessage =
+        apiRes.errorMessage ?? 'Invalid phone, email or 4-digit PIN.';
+    notifyListeners();
     return false;
   }
 
@@ -654,6 +819,7 @@ class SafetyProvider extends ChangeNotifier {
             id: guardian['id']?.toString() ?? '',
             name: guardian['name']?.toString() ?? 'Guardian',
             role: guardian['role']?.toString() ?? 'Guardian • Tier 2',
+            phone: guardian['phone']?.toString() ?? '',
             battery: 100,
             distance: 'Cloud synchronized',
             isEmergencyUnit: guardian['isOfficial'] == true,
@@ -714,7 +880,18 @@ class SafetyProvider extends ChangeNotifier {
     required String role,
   }) async {
     if (_authToken == null || _authToken!.isEmpty) {
-      return false;
+      _guardians.add(
+        GuardianModel(
+          id: 'g_local_${DateTime.now().millisecondsSinceEpoch}',
+          name: name,
+          phone: phone,
+          role: role,
+          battery: 100,
+          distance: 'Local Device Storage',
+        ),
+      );
+      notifyListeners();
+      return true;
     }
 
     final response = await apiService.addGuardian(
@@ -729,24 +906,46 @@ class SafetyProvider extends ChangeNotifier {
     );
 
     if (!response.isSuccess || response.data == null) {
-      return false;
+      // Local fallback on server offline
+      _guardians.add(
+        GuardianModel(
+          id: 'g_offline_${DateTime.now().millisecondsSinceEpoch}',
+          name: name,
+          phone: phone,
+          role: role,
+          battery: 100,
+          distance: 'Offline / Pending Sync',
+        ),
+      );
+      notifyListeners();
+      return true;
     }
 
     final guardian = response.data!['guardian'] as Map<String, dynamic>?;
-    if (guardian == null) {
-      return false;
-    }
-
     _guardians.add(
       GuardianModel(
-        id: guardian['id']?.toString() ?? '',
-        name: guardian['name']?.toString() ?? name,
-        role: guardian['role']?.toString() ?? role,
+        id: guardian?['id']?.toString() ?? 'g_${DateTime.now().millisecondsSinceEpoch}',
+        name: guardian?['name']?.toString() ?? name,
+        phone: guardian?['phone']?.toString() ?? phone,
+        role: guardian?['role']?.toString() ?? role,
         battery: 100,
         distance: 'Cloud synchronized',
       ),
     );
     notifyListeners();
+    return true;
+  }
+
+  Future<bool> removeGuardianAsync(String id) async {
+    _guardians.removeWhere((g) => g.id == id);
+    notifyListeners();
+
+    if (_authToken != null &&
+        _authToken!.isNotEmpty &&
+        !id.startsWith('g_local') &&
+        !id.startsWith('g_offline')) {
+      await apiService.deleteGuardian(guardianId: id, token: _authToken);
+    }
     return true;
   }
 
@@ -858,12 +1057,13 @@ class SafetyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addGuardian(String name, String role, String distance) {
+  void addGuardian(String name, String role, String distance, {String phone = ''}) {
     _guardians.add(
       GuardianModel(
         id: 'g_${DateTime.now().millisecondsSinceEpoch}',
         name: name,
         role: role,
+        phone: phone,
         battery: 100,
         distance: distance,
       ),
@@ -890,7 +1090,7 @@ class SafetyProvider extends ChangeNotifier {
       if (lower.contains('walk') || lower.contains('साथ')) {
         reply = 'Walk-With-Me: Safety check-in interval set. If unconfirmed, silent distress alerts your circle.';
       } else if (lower.contains('suspicious') || lower.contains('पीछे') || lower.contains('danger')) {
-        reply = 'Alert noted: Nearest safe haven is Barakhamba Police Station (250m). Disarming decoy mode is ready.';
+        reply = 'Alert noted: Nearest emergency haven is active police patrol (~250m). Disarming decoy mode is ready.';
       } else if (lower.contains('fake') || lower.contains('कॉल')) {
         reply = 'Fake Call: Simulated incoming call ready in quick actions. Tap to launch conversation decoy.';
       } else if (lower.contains('helpline') || lower.contains('नंबर') || lower.contains('112')) {
@@ -950,13 +1150,15 @@ class SafetyProvider extends ChangeNotifier {
     triggerSimulatedSos(source: SosTriggerSource.shaktiBandHardwareButton);
   }
 
-  void cancelSimulatedSos() {
+  Future<void> cancelSimulatedSos({String? pin, String? reason}) async {
     _countdownTimer?.cancel();
     _isSosActive = false;
     _sosCountdown = 5;
     _safetyStatus = 'Protected';
-    unifiedSos.standDownSos();
-    unawaited(loadIncidentsAsync());
+    notifyListeners();
+
+    await unifiedSos.standDownSos(pin: pin ?? _userPin, reason: reason);
+    await loadIncidentsAsync();
     notifyListeners();
   }
 

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/safety_provider.dart';
+import '../../services/api_config.dart';
+import '../../utils/map_launcher.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_decorations.dart';
 import '../../theme/app_typography.dart';
@@ -593,6 +595,21 @@ class HomeDashboardScreen extends StatelessWidget {
     final strings = safety.strings;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final loc = safety.locationService.currentLocation;
+    final isAcquiring = safety.locationService.isAcquiring;
+    final locCoordText = loc != null
+        ? '${loc.latitude >= 0 ? loc.latitude.toStringAsFixed(6) : (-loc.latitude).toStringAsFixed(6)}° ${loc.latitude >= 0 ? 'N' : 'S'}, ${loc.longitude >= 0 ? loc.longitude.toStringAsFixed(6) : (-loc.longitude).toStringAsFixed(6)}° ${loc.longitude >= 0 ? 'E' : 'W'}'
+        : (isAcquiring
+            ? (strings.isHindi ? 'जीपीएस लॉक प्राप्त हो रहा है...' : 'Acquiring GNSS fix...')
+            : strings.liveCoordinates);
+    final addressText = safety.locationService.currentAddress.isNotEmpty &&
+            safety.locationService.currentAddress != 'Acquiring live location...'
+        ? safety.locationService.currentAddress
+        : (loc != null ? '${loc.latitude.toStringAsFixed(6)}, ${loc.longitude.toStringAsFixed(6)}' : strings.currentAddress);
+    final fixBadge = loc != null
+        ? '±${loc.accuracy.toStringAsFixed(1)}m • ${loc.provider.contains('GNSS') ? 'GNSS' : 'Network'}'
+        : (isAcquiring ? (strings.isHindi ? 'सर्च जारी...' : 'Acquiring...') : strings.precisionFix);
+
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkSurface : AppColors.surface,
       appBar: PreferredSize(
@@ -1175,14 +1192,23 @@ class HomeDashboardScreen extends StatelessWidget {
 
             const SizedBox(height: 14),
 
-            // Live Location & Precision GPS Tile - navigates to RadarScreen
+            // Live Location & Precision GPS Tile - opens Google Maps on tap
             GlassCard(
               padding: const EdgeInsets.all(16),
               borderRadius: BorderRadius.circular(24),
               onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const RadarScreen()),
-                );
+                final loc = safety.locationService.currentLocation;
+                if (loc != null) {
+                  MapLauncher.openCoordinates(
+                    loc.latitude,
+                    loc.longitude,
+                    label: safety.locationService.currentAddress.isNotEmpty
+                        ? safety.locationService.currentAddress
+                        : 'My Live Location',
+                  );
+                } else {
+                  safety.locationService.acquireCurrentLocation(forceRefresh: true);
+                }
               },
               child: Column(
                 children: [
@@ -1208,7 +1234,7 @@ class HomeDashboardScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    strings.liveCoordinates,
+                                    locCoordText,
                                     style: AppTypography.labelSm.copyWith(
                                       color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.berryMuted,
                                       fontSize: 9,
@@ -1217,7 +1243,7 @@ class HomeDashboardScreen extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   Text(
-                                    strings.currentAddress,
+                                    addressText,
                                     style: AppTypography.bodyMd.copyWith(
                                       fontWeight: FontWeight.w800,
                                       color: isDark ? AppColors.darkOnSurface : AppColors.deepPlum,
@@ -1239,7 +1265,7 @@ class HomeDashboardScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          strings.precisionFix,
+                          fixBadge,
                           style: AppTypography.labelSm.copyWith(
                             color: AppColors.emeraldSafe,
                             fontWeight: FontWeight.w800,
@@ -1251,79 +1277,203 @@ class HomeDashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
 
-                  // Integrated Mini Location Map Texture
-                  Container(
-                    height: 110,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE2E8F0),
-                      borderRadius: BorderRadius.circular(16),
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFFCBD5E1),
-                          Color(0xFFE2E8F0),
-                          Color(0xFFCBD5E1),
+                  // Integrated Mini Location Map Texture with Real Dynamic Static Map
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      height: 120,
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF0F172A),
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Positioned.fill(
+                            child: loc != null
+                                ? Image.network(
+                                    ApiConfig.googleMapsApiKey != null && ApiConfig.googleMapsApiKey!.isNotEmpty
+                                        ? 'https://maps.googleapis.com/maps/api/staticmap?center=${loc.latitude},${loc.longitude}&zoom=15&size=500x160&scale=2&maptype=roadmap&key=${ApiConfig.googleMapsApiKey}'
+                                        : 'https://static-maps.yandex.ru/1.x/?ll=${loc.longitude},${loc.latitude}&z=15&l=map&size=450,150',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (ctx, err, stack) => CustomPaint(
+                                      painter: _MiniMapPainter(),
+                                    ),
+                                  )
+                                : CustomPaint(
+                                    painter: _MiniMapPainter(),
+                                  ),
+                          ),
+                          // Subtle dark vignette gradient overlay
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.1),
+                                    Colors.black.withValues(alpha: 0.35),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Center Pulsing GPS Blip
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.primary.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          Container(
+                            width: 16,
+                            height: 16,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.primary,
+                            ),
+                            child: const Center(
+                              child: CircleAvatar(
+                                radius: 3,
+                                backgroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                          // Live Fix Badge
+                          Positioned(
+                            bottom: 8,
+                            left: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.share_location,
+                                      size: 11, color: AppColors.emeraldSafe),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    loc != null
+                                        ? 'LIVE GNSS • ±${loc.accuracy.toStringAsFixed(1)}m'
+                                        : strings.satelliteFix,
+                                    style: AppTypography.labelSm.copyWith(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Map Shortcut Badge
+                          Positioned(
+                            bottom: 8,
+                            right: 8,
+                            child: InkWell(
+                              onTap: () {
+                                final loc = safety.locationService.currentLocation;
+                                if (loc != null) {
+                                  MapLauncher.openCoordinates(
+                                    loc.latitude,
+                                    loc.longitude,
+                                    label: safety.locationService.currentAddress.isNotEmpty
+                                        ? safety.locationService.currentAddress
+                                        : 'My Live Location',
+                                  );
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.open_in_new, size: 10, color: Colors.white),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      strings.isHindi ? 'मैप्स खोलें' : 'Open Map',
+                                      style: AppTypography.labelSm.copyWith(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _MiniMapPainter(),
-                          ),
-                        ),
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.primary.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        Container(
-                          width: 16,
-                          height: 16,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.primary,
-                          ),
-                          child: const Center(
-                            child: CircleAvatar(
-                              radius: 3,
-                              backgroundColor: Colors.white,
+                  ),
+
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            side: BorderSide(
+                              color: isDark ? AppColors.darkOutline : const Color(0x22000000),
                             ),
                           ),
+                          icon: const Icon(Icons.map_outlined, size: 15, color: AppColors.primary),
+                          label: Text(
+                            strings.isHindi ? 'गूगल मैप्स' : 'Google Maps ↗',
+                            style: AppTypography.labelSm.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          onPressed: () {
+                            final loc = safety.locationService.currentLocation;
+                            if (loc != null) {
+                              MapLauncher.openCoordinates(
+                                loc.latitude,
+                                loc.longitude,
+                                label: safety.locationService.currentAddress.isNotEmpty
+                                    ? safety.locationService.currentAddress
+                                    : 'My Live Location',
+                              );
+                            } else {
+                              safety.locationService.acquireCurrentLocation(forceRefresh: true);
+                            }
+                          },
                         ),
-                        Positioned(
-                          bottom: 8,
-                          left: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.share_location,
-                                    size: 11, color: AppColors.tertiary),
-                                const SizedBox(width: 4),
-                                Text(
-                                  strings.satelliteFix,
-                                  style: AppTypography.labelSm.copyWith(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            side: BorderSide(
+                              color: isDark ? AppColors.darkOutline : const Color(0x22000000),
                             ),
                           ),
+                          icon: const Icon(Icons.radar, size: 15, color: AppColors.tertiary),
+                          label: Text(
+                            strings.isHindi ? 'सुरक्षा रडार' : 'Safety Radar',
+                            style: AppTypography.labelSm.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const RadarScreen()),
+                            );
+                          },
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),

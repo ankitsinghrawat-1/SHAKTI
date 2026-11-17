@@ -39,6 +39,14 @@ class GuardianRepository {
     return this.mapGuardian(result.rows[0]);
   }
 
+  async delete(id, userId) {
+    const result = await pool.query(
+      `DELETE FROM guardians WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [id, userId],
+    );
+    return result.rowCount > 0;
+  }
+
   mapGuardian(row) {
     if (!row) {
       return null;

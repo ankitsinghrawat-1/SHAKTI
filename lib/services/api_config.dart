@@ -39,6 +39,18 @@ class ApiConfig {
     _customBaseUrl = _defaultBaseUrl;
   }
 
+  /// Optional Google Maps API Key for Geolocation and Geocoding
+  static const String _defaultGoogleMapsApiKey = String.fromEnvironment(
+    'GOOGLE_MAPS_API_KEY',
+    defaultValue: '',
+  );
+  static String? _googleMapsApiKey =
+      _defaultGoogleMapsApiKey.isNotEmpty ? _defaultGoogleMapsApiKey : null;
+  static String? get googleMapsApiKey => _googleMapsApiKey;
+  static void setGoogleMapsApiKey(String? key) {
+    _googleMapsApiKey = (key != null && key.trim().isNotEmpty) ? key.trim() : null;
+  }
+
   /// Request timeout duration (fail-fast to avoid hanging safety UI).
   static const Duration requestTimeout = Duration(seconds: 5);
 

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/app_strings.dart';
 import '../../providers/safety_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_decorations.dart';
 import '../../theme/app_typography.dart';
 import '../../services/api_config.dart';
 import '../../widgets/shakti_emblem.dart';
@@ -113,23 +114,19 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
             backgroundColor: AppColors.secondary,
           ),
         );
-      } else if (!safety.isServerOnline) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(safety.strings.isHindi
-                ? 'स्थानीय प्रोटोटाइप मोड: सर्वर उपलब्ध नहीं होने पर स्थानीय प्रोफाइल से लॉगिन किया गया।'
-                : 'Local Prototype Mode: Server offline. Authenticated with local device profile.'),
-            backgroundColor: const Color(0xFFD97706),
-            duration: const Duration(seconds: 3),
-          ),
-        );
       }
       _navigateToDashboard();
+    } else if (safety.pendingVerificationPhone != null) {
+      await _showPhoneVerificationDialog(safety);
+      if (mounted && safety.isAuthenticated) {
+        _navigateToDashboard();
+      }
     } else {
       setState(() {
-        _errorMessage = safety.strings.isHindi
-            ? 'अमान्य क्रेडेंशियल। कृपया पंजीकृत मोबाइल नंबर और 4-अंकीय पिन दर्ज करें।'
-            : 'Invalid credentials. Use the registered phone number and 4-digit PIN.';
+        _errorMessage = safety.serverStatusMessage ??
+            (safety.strings.isHindi
+                ? 'अमान्य क्रेडेंशियल। कृपया पंजीकृत मोबाइल नंबर और 4-अंकीय पिन दर्ज करें।'
+                : 'Invalid credentials. Use the registered phone number and 4-digit PIN.');
       });
     }
   }
@@ -221,46 +218,126 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Verify phone number'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Enter the verification code sent by SMS.'),
-              TextField(
-                controller: codeController,
-                keyboardType: TextInputType.number,
-                maxLength: 8,
-                autofocus: true,
+        builder: (context, setDialogState) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return AlertDialog(
+            backgroundColor: isDark
+                ? AppColors.darkSurfaceContainerLow
+                : AppColors.surfaceContainerLowest,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              safety.strings.isHindi ? 'फ़ोन नंबर सत्यापित करें' : 'Verify phone number',
+              style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.w800),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  safety.strings.isHindi
+                      ? '${safety.pendingVerificationPhone ?? "आपके फ़ोन"} पर भेजा गया 6-अंकीय सत्यापन कोड दर्ज करें:'
+                      : 'Enter the verification code sent to ${safety.pendingVerificationPhone ?? "your phone"}:',
+                  style: AppTypography.bodySm.copyWith(
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.slateSecondary,
+                  ),
+                ),
+                if (safety.demoOtpCode != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.emeraldSafe.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.emeraldSafe.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.stars, size: 16, color: AppColors.emeraldSafe),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Demo OTP: ${safety.demoOtpCode}',
+                              style: const TextStyle(
+                                color: AppColors.emeraldSafe,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            codeController.text = safety.demoOtpCode!;
+                          },
+                          child: Text(
+                            safety.strings.isHindi ? '[ऑटो-भरें]' : '[Auto-Fill]',
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: codeController,
+                  keyboardType: TextInputType.number,
+                  maxLength: 8,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Verification Code',
+                    border: OutlineInputBorder(borderRadius: AppDecorations.brDefault),
+                    prefixIcon: Icon(Icons.sms_outlined, size: 20),
+                  ),
+                ),
+                if (error.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(error, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  safety.clearPendingVerification();
+                  Navigator.pop(dialogContext, false);
+                },
+                child: Text(safety.strings.cancel),
               ),
-              if (error.isNotEmpty)
-                Text(error, style: const TextStyle(color: Colors.red)),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final ok = await safety.verifyPendingPhone(
-                  codeController.text.trim(),
-                );
-                if (ok) {
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
-                  }
-                } else {
-                  setDialogState(
-                    () => error = 'Invalid or expired verification code.',
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+                onPressed: () async {
+                  final ok = await safety.verifyPendingPhone(
+                    codeController.text.trim(),
                   );
-                }
-              },
-              child: const Text('Verify'),
-            ),
-          ],
-        ),
+                  if (ok) {
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext, true);
+                    }
+                  } else {
+                    setDialogState(
+                      () => error = safety.serverStatusMessage ??
+                          (safety.strings.isHindi
+                              ? 'अमान्य या समाप्त सत्यापन कोड।'
+                              : 'Invalid or expired verification code.'),
+                    );
+                  }
+                },
+                child: Text(safety.strings.isHindi ? 'सत्यापित करें' : 'Verify'),
+              ),
+            ],
+          );
+        },
       ),
     );
     codeController.dispose();
@@ -1119,6 +1196,87 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
     );
   }
 
+  void _showServerConfigDialog(SafetyProvider safety) {
+    final urlCtrl = TextEditingController(text: ApiConfig.baseUrl);
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: isDark
+              ? AppColors.darkSurfaceContainerLow
+              : AppColors.surfaceContainerLowest,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text(
+            safety.strings.isHindi ? 'सर्वर बेस यूआरएल कॉन्फ़िगर करें' : 'Backend Server Configuration',
+            style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                safety.strings.isHindi
+                    ? 'भौतिक फ़ोन या लोकल परीक्षण हेतु बैकएंड का पता दर्ज करें:'
+                    : 'Enter the backend base URL for testing (e.g. Wi-Fi IP or localhost):',
+                style: AppTypography.bodySm.copyWith(
+                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.slateSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: urlCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Base URL',
+                  border: OutlineInputBorder(borderRadius: AppDecorations.brDefault),
+                  prefixIcon: Icon(Icons.link, size: 20),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    label: const Text('localhost:3000', style: TextStyle(fontSize: 11)),
+                    onPressed: () => urlCtrl.text = 'http://localhost:3000/api/v1',
+                  ),
+                  ActionChip(
+                    label: const Text('10.0.2.2 (Emulator)', style: TextStyle(fontSize: 11)),
+                    onPressed: () => urlCtrl.text = 'http://10.0.2.2:3000/api/v1',
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                ApiConfig.resetBaseUrl();
+                Navigator.of(ctx).pop();
+                safety.retryServerConnection();
+              },
+              child: Text(safety.strings.isHindi ? 'डिफ़ॉल्ट रीसेट' : 'Reset Default'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              onPressed: () {
+                ApiConfig.setBaseUrl(urlCtrl.text);
+                Navigator.of(ctx).pop();
+                safety.retryServerConnection();
+              },
+              child: Text(safety.strings.isHindi ? 'सेव एवं टेस्ट' : 'Save & Test'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildServerStatusIndicator(SafetyProvider safety) {
     final isOnline = safety.isServerOnline;
     final isChecking = safety.serverConnectionStatus == ServerConnectionStatus.checking;
@@ -1152,22 +1310,32 @@ class _SecureLoginScreenState extends State<SecureLoginScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            isOnline
-                ? (safety.strings.isHindi ? 'सर्वर ऑनलाइन • लाइव सत्र' : 'Server Online • Live API Session')
-                : (isChecking
-                    ? (safety.strings.isHindi ? 'कनेक्ट हो रहा है...' : 'Connecting to Server...')
-                    : (safety.strings.isHindi ? 'लोकल प्रोटोटाइप मोड (सर्वर ऑफलाइन)' : 'Local Prototype Mode (Server Offline)')),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: isOnline
-                  ? AppColors.emeraldSafe
-                  : const Color(0xFF92400E),
+          Flexible(
+            child: Text(
+              isOnline
+                  ? (safety.strings.isHindi ? 'सर्वर ऑनलाइन • लाइव सत्र' : 'Server Online • Live API Session')
+                  : (isChecking
+                      ? (safety.strings.isHindi ? 'कनेक्ट हो रहा है...' : 'Connecting to Server...')
+                      : (safety.strings.isHindi ? 'लोकल प्रोटोटाइप मोड (सर्वर ऑफलाइन)' : 'Local Prototype Mode (Server Offline)')),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: isOnline
+                    ? AppColors.emeraldSafe
+                    : const Color(0xFF92400E),
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _showServerConfigDialog(safety),
+            child: const Padding(
+              padding: EdgeInsets.only(left: 6),
+              child: Icon(Icons.settings, size: 14, color: AppColors.slateSecondary),
             ),
           ),
           if (!isOnline && !isChecking) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: () => safety.retryServerConnection(),
               child: Text(

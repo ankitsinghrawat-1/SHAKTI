@@ -21,6 +21,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
   final EmergencyCallService callService;
   final ApiService? apiService;
   final String? Function()? authTokenProvider;
+  final List<Map<String, dynamic>> Function()? guardiansProvider;
 
   bool _isSosActive = false;
   bool get isSosActive => _isSosActive;
@@ -47,6 +48,7 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     required this.callService,
     this.apiService,
     this.authTokenProvider,
+    this.guardiansProvider,
   });
 
   /// Unified emergency execution workflow
@@ -119,15 +121,16 @@ class UnifiedSosCoordinator extends ChangeNotifier {
       token: authTokenProvider?.call(),
     );
 
-    if (locPoint != null) {
-      guardianService.dispatchEmergencyAlerts(
-        incidentId: incidentId,
-        latitude: locPoint.latitude,
-        longitude: locPoint.longitude,
-        userName: userName,
-        isNetworkAvailable: locationService.isNetworkAvailable,
-      );
-    }
+    final lat = locPoint?.latitude ?? 0.0;
+    final lng = locPoint?.longitude ?? 0.0;
+    guardianService.dispatchEmergencyAlerts(
+      incidentId: incidentId,
+      latitude: lat,
+      longitude: lng,
+      userName: userName,
+      isNetworkAvailable: locationService.isNetworkAvailable,
+      customGuardians: guardiansProvider?.call(),
+    );
 
     if (apiService != null) {
       await _dispatchIncidentToBackend(
@@ -191,9 +194,10 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     }
   }
 
-  Future<void> standDownSos() async {
+  Future<void> standDownSos({String? pin, String? reason}) async {
+    final incidentToResolve = _activeIncidentId;
     debugPrint(
-      '[UnifiedSosCoordinator] Standing down incident $_activeIncidentId',
+      '[UnifiedSosCoordinator] Standing down incident $incidentToResolve',
     );
     _isSosActive = false;
     _incidentDurationTimer?.cancel();
@@ -209,14 +213,29 @@ class UnifiedSosCoordinator extends ChangeNotifier {
     }
     debugPrint('[UnifiedSosCoordinator] Media recordings stopped');
     if (apiService != null) {
+      final token = authTokenProvider?.call();
       final registered = await mediaService.registerManifestWithApi(
         apiService: apiService!,
-        token: authTokenProvider?.call(),
+        token: token,
       );
       if (!registered) {
         debugPrint(
           '[UnifiedSosCoordinator] Evidence registration failed for '
-          'incident $_activeIncidentId',
+          'incident $incidentToResolve',
+        );
+      }
+
+      // 3. Formally resolve the incident on the backend cloud
+      if (incidentToResolve != null && pin != null && pin.isNotEmpty) {
+        final resolveRes = await apiService!.resolveIncident(
+          incidentId: incidentToResolve,
+          pin: pin,
+          reason: reason ?? 'Emergency stood down safely by user',
+          token: token,
+        );
+        debugPrint(
+          '[UnifiedSosCoordinator] Backend incident resolve: '
+          '${resolveRes.statusCode} ${resolveRes.isSuccess}',
         );
       }
     }

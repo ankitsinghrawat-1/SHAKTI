@@ -234,6 +234,14 @@ class GuardiansScreen extends StatelessWidget {
   }
 
   void _sendPing(BuildContext context, GuardianModel guardian, SafetyProvider safety) {
+    final loc = safety.locationService.currentLocation;
+    final address = (safety.locationService.currentAddress.isNotEmpty &&
+            safety.locationService.currentAddress != 'Acquiring live location...')
+        ? safety.locationService.currentAddress
+        : (loc != null
+            ? '${loc.latitude.toStringAsFixed(6)}° N, ${loc.longitude.toStringAsFixed(6)}° E'
+            : (safety.strings.isHindi ? 'सत्यापित लाइव स्थान' : 'Live GNSS Coordinates'));
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: AppColors.primary,
@@ -244,8 +252,8 @@ class GuardiansScreen extends StatelessWidget {
             Expanded(
               child: Text(
                 safety.strings.isHindi
-                  ? '${guardian.name} को जीपीएस पिंग भेजा गया: स्थान 24 कस्तूरबा गांधी मार्ग सत्यापित।'
-                  : 'GPS Ping sent to ${guardian.name}: Telemetry confirmed at 24 Kasturba Gandhi Marg.',
+                  ? '${guardian.name} को लाइव जीपीएस पिंग भेजा गया: स्थान "$address" पर टेलीमेट्री सत्यापित।'
+                  : 'Live GPS Ping sent to ${guardian.name}: Telemetry confirmed at $address.',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
@@ -475,7 +483,9 @@ class GuardiansScreen extends StatelessWidget {
                                         ],
                                       ),
                                       Text(
-                                        guardian.role,
+                                        guardian.phone.isNotEmpty
+                                            ? '${guardian.role} • ${guardian.phone}'
+                                            : guardian.role,
                                         style: AppTypography.labelSm.copyWith(
                                           color: AppColors.slateSecondary,
                                           fontSize: 11,
@@ -525,8 +535,42 @@ class GuardiansScreen extends StatelessWidget {
                       const Divider(height: 1, color: Color(0x14000000)),
                       const SizedBox(height: 10),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          if (!guardian.isEmergencyUnit)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.primary),
+                              tooltip: strings.isHindi ? 'हटाएं' : 'Remove Guardian',
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: Text(strings.isHindi ? 'अभिभावक हटाएं?' : 'Remove Guardian?'),
+                                    content: Text(
+                                      strings.isHindi
+                                          ? 'क्या आप वास्तव में ${guardian.name} को सुरक्षा घेरे से हटाना चाहते हैं?'
+                                          : 'Are you sure you want to remove ${guardian.name} from your safety circle?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(ctx).pop(false),
+                                        child: Text(strings.isHindi ? 'रद्द करें' : 'Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(ctx).pop(true),
+                                        child: Text(
+                                          strings.isHindi ? 'हटाएं' : 'Remove',
+                                          style: const TextStyle(color: AppColors.primary),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  await safety.removeGuardianAsync(guardian.id);
+                                }
+                              },
+                            ),
+                          const Spacer(),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -597,7 +641,7 @@ class GuardiansScreen extends StatelessWidget {
                   Text(
                     '• Tier 1: Sister & Mother receive push notification & phone call buzzer.\n'
                     '• Tier 2: Secondary contacts pinged if SOS is not acknowledged in 60s.\n'
-                    '• Tier 3: Direct integration with Delhi PCR Police CAD network.',
+                    '• Tier 3: Direct integration with ERSS-112 Emergency Dispatch CAD network.',
                     style: AppTypography.bodySm.copyWith(
                       color: AppColors.slateSecondary,
                       height: 1.5,

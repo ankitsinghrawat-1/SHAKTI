@@ -494,6 +494,62 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
               const SizedBox(height: 18),
 
+              // Section: Developer Diagnostics & Server IP Config
+              _sectionHeader(
+                strings.isHindi ? 'डेवलपर डायग्नोस्टिक्स एवं सर्वर कॉन्फिग' : 'Developer Diagnostics & Server Config',
+                Icons.terminal,
+              ),
+              const SizedBox(height: 8),
+              GlassCard(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const DeveloperDiagnosticsScreen(),
+                    ),
+                  );
+                },
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.dns, color: AppColors.primary, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            strings.isHindi ? 'सर्वर आईपी एवं सिस्टम डायग्नोस्टिक्स' : 'Server Host IP & Health Test',
+                            style: AppTypography.titleSm.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            strings.isHindi
+                                ? 'बैकएंड बेस यूआरएल, वाई-फाई लैन आईपी और गूगल मैप्स एपीआई बदलें'
+                                : 'Configure LAN IP, Google Maps Key, and test backend endpoints',
+                            style: AppTypography.bodySm.copyWith(
+                              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.slateSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, color: AppColors.primary),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
               // Section 1: Language
               _sectionHeader(strings.languageSettings, Icons.language),
               const SizedBox(height: 8),

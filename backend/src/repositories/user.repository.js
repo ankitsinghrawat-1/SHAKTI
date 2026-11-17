@@ -88,6 +88,18 @@ async function deletePendingUser(userId) {
   );
 }
 
+async function updatePendingUser({ id, name, email, pin }) {
+  const pinHash = await bcrypt.hash(pin, config.bcryptSaltRounds);
+  const result = await pool.query(
+    `UPDATE users
+     SET name = $1, email = NULLIF($2, ''), pin_hash = $3, updated_at = NOW()
+     WHERE id = $4 AND is_active = FALSE AND phone_verified_at IS NULL
+     RETURNING id, name, phone, email, shield_id, pin_hash, is_active, phone_verified_at, created_at, updated_at`,
+    [name, email || '', pinHash, id],
+  );
+  return mapUser(result.rows[0]);
+}
+
 async function verifyPin(user, pin) {
   if (!user || !user.pinHash) {
     return false;
@@ -120,4 +132,5 @@ module.exports = {
   generateToken,
   markPhoneVerified,
   deletePendingUser,
+  updatePendingUser,
 };

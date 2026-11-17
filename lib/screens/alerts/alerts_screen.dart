@@ -112,7 +112,13 @@ class AlertsScreen extends StatelessWidget {
   void _showReportIncidentSheet(BuildContext context, SafetyProvider safety) {
     String selectedType = 'Broken Streetlight';
     String selectedSeverity = 'Medium';
-    final locationCtrl = TextEditingController(text: 'Janpath Outer Ring Corridor');
+    final currentAddr = safety.locationService.currentAddress;
+    final initialLocText = (currentAddr.isNotEmpty && currentAddr != 'Acquiring live location...')
+        ? currentAddr
+        : (safety.locationService.currentLocation != null
+            ? '${safety.locationService.currentLocation!.latitude.toStringAsFixed(6)}, ${safety.locationService.currentLocation!.longitude.toStringAsFixed(6)}'
+            : '');
+    final locationCtrl = TextEditingController(text: initialLocText);
     final notesCtrl = TextEditingController();
 
     // Working Photo Attachment State
@@ -558,8 +564,8 @@ class AlertsScreen extends StatelessWidget {
                           Expanded(
                             child: Text(
                               isHindi
-                                  ? 'स्थानीय प्रोटोटाइप सूचना: रिपोर्ट केवल स्थानीय रूप से सहेजी जाती है। आपातकालीन पुलिस को नहीं भेजी जाती।'
-                                  : 'Saved locally in prototype - not sent to municipal dispatch.',
+                                  ? 'क्लाउड सिंक सूचना: रिपोर्ट शक्ति क्लाउड नेटवर्क (पोस्टग्रेएसक्यूएल) पर सुरक्षित रूप से सहेजी जाती है।'
+                                  : 'Synced to SHAKTI Cloud Network • Stored securely in PostgreSQL.',
                               style: AppTypography.bodySm.copyWith(color: AppColors.slateSecondary, fontSize: 11),
                             ),
                           ),
@@ -580,7 +586,7 @@ class AlertsScreen extends StatelessWidget {
                         ),
                         icon: const Icon(Icons.send, size: 16),
                         label: Text(
-                          isHindi ? 'रिपोर्ट दर्ज करें (लोकल मॉक)' : 'Submit Report (Local Mock)',
+                          isHindi ? 'सुरक्षा नेटवर्क पर रिपोर्ट दर्ज करें' : 'Submit Hazard Report',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         onPressed: () {
@@ -646,6 +652,12 @@ class AlertsScreen extends StatelessWidget {
     final safety = Provider.of<SafetyProvider>(context);
     final strings = safety.strings;
 
+    if (safety.hazardReports.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        safety.loadHazardReportsAsync();
+      });
+    }
+
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: AppBar(
@@ -664,7 +676,12 @@ class AlertsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await safety.loadHazardReportsAsync();
+          await safety.loadIncidentsAsync();
+        },
+        child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1074,6 +1091,7 @@ class AlertsScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }

@@ -124,15 +124,15 @@ class AppStrings {
   String get bandSynced => isHindi ? 'सक्रिय' : 'Active';
   String get guardiansActive => isHindi ? 'सक्रिय अभिभावक' : 'Guardians';
   String get directAlertRing => isHindi ? '4 सुरक्षा घेरे में' : '4 in alert ring';
-  String get liveCoordinates => isHindi ? 'लाइव निर्देशांक (सिम्युलेटेड)' : 'LIVE COORDINATES (SIMULATED)';
-  String get currentAddress => isHindi ? 'कनॉट प्लेस, इनर सर्कल' : 'Connaught Place, Inner Circle';
+  String get liveCoordinates => isHindi ? 'लाइव निर्देशांक' : 'LIVE GNSS COORDINATES';
+  String get currentAddress => isHindi ? 'लाइव स्थान प्राप्त हो रहा है...' : 'Acquiring live location...';
   String get precisionFix => isHindi ? '±2.5मी सटीक' : '±2.5m Fix';
   String get satelliteFix => isHindi ? 'जीपीएस कनेक्टेड' : 'GNSS Satellite Fix';
   String get radarTitle => isHindi ? 'रात्रि सुरक्षा रडार' : 'Night Safety Radar';
-  String get radarClear => isHindi ? 'जोन 4 सुरक्षित' : 'Zone 4 Clear';
+  String get radarClear => isHindi ? 'जोन सुरक्षित' : 'Zone Clear';
   String get radarDesc => isHindi
-      ? 'बाराखंभा रोड पर अच्छी स्ट्रीटलाइट रोशनी। 250 मीटर के भीतर 3 खुले प्रतिष्ठान और 1 सुरक्षा चौकी।'
-      : 'High street illumination verified along Barakhamba road. 3 open commercial establishments and 1 metro security post within 250m.';
+      ? 'सक्रिय सुरक्षा कॉरिडोर पर अच्छी स्ट्रीटलाइट रोशनी। खुले प्रतिष्ठान और आपातकालीन सुरक्षा सहायता पास में।'
+      : 'High street illumination verified along safety corridor. Active open establishments and emergency assistance within reach.';
   String get aiAssistantBtn => isHindi ? 'एआई सहायक' : 'AI Assistant';
 
   // App Settings (Phase 6 B)

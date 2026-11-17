@@ -23,40 +23,64 @@ class _DeveloperDiagnosticsScreenState extends State<DeveloperDiagnosticsScreen>
 
   void _showServerConfigDialog(BuildContext context, SafetyProvider safety) {
     final urlCtrl = TextEditingController(text: ApiConfig.baseUrl);
+    final mapsKeyCtrl = TextEditingController(text: ApiConfig.googleMapsApiKey ?? '');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surfaceContainerLowest,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(
-          safety.strings.isHindi ? 'सर्वर बेस यूआरएल कॉन्फ़िगर करें' : 'Configure Backend Server URL',
+          safety.strings.isHindi ? 'सर्वर एवं मैप्स कॉन्फ़िगर करें' : 'Configure Server & Google Maps',
           style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.w800),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              safety.strings.isHindi
-                  ? 'स्थानीय परीक्षण या भौतिक उपकरण परीक्षण के लिए अपने बैकएंड का पता दर्ज करें (उदा. http://localhost:3000/api/v1 या LAN IP):'
-                  : 'Enter the base URL for the Node.js/Express backend service (e.g. http://localhost:3000/api/v1 or LAN IP):',
-              style: AppTypography.bodySm.copyWith(color: AppColors.slateSecondary),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Base URL',
-                border: OutlineInputBorder(borderRadius: AppDecorations.brDefault),
-                prefixIcon: Icon(Icons.link, size: 20),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                safety.strings.isHindi
+                    ? 'स्थानीय परीक्षण या भौतिक उपकरण परीक्षण के लिए अपने बैकएंड का पता दर्ज करें (उदा. http://localhost:3000/api/v1 या LAN IP):'
+                    : 'Enter the base URL for the Node.js/Express backend service (e.g. http://localhost:3000/api/v1 or LAN IP):',
+                style: AppTypography.bodySm.copyWith(color: AppColors.slateSecondary),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: urlCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Base URL',
+                  border: OutlineInputBorder(borderRadius: AppDecorations.brDefault),
+                  prefixIcon: Icon(Icons.link, size: 20),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Google Maps API Key (Optional):',
+                style: AppTypography.bodySm.copyWith(color: AppColors.slateSecondary, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: mapsKeyCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Google Maps API Key',
+                  hintText: 'AIzaSy...',
+                  border: OutlineInputBorder(borderRadius: AppDecorations.brDefault),
+                  prefixIcon: Icon(Icons.map, size: 20),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Note: If left blank, free OpenStreetMap Nominatim reverse geocode & IP Geolocation fallback are automatically used.',
+                style: TextStyle(fontSize: 10, color: AppColors.slateSecondary),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () {
               ApiConfig.resetBaseUrl();
+              ApiConfig.setGoogleMapsApiKey(null);
               Navigator.of(ctx).pop();
               safety.checkServerHealth();
             },
@@ -70,8 +94,10 @@ class _DeveloperDiagnosticsScreenState extends State<DeveloperDiagnosticsScreen>
             ),
             onPressed: () {
               ApiConfig.setBaseUrl(urlCtrl.text);
+              ApiConfig.setGoogleMapsApiKey(mapsKeyCtrl.text.isEmpty ? null : mapsKeyCtrl.text);
               Navigator.of(ctx).pop();
               safety.checkServerHealth();
+              safety.locationService.acquireCurrentLocation(forceRefresh: true);
             },
             child: Text(safety.strings.save),
           ),
