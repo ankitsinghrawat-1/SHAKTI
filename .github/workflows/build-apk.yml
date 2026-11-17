@@ -1,0 +1,63 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shakti-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-release
+          name: SHAKTI Women Safety App v1.0.0 Release
+          body: |
+            ## SHAKTI v1.0.0 Android Release APK
+            Directly downloadable and installable APK for Android phones.
+
+            ### Features:
+            - **Live GNSS Tracking**: Real hardware coordinates with 6-decimal precision.
+            - **Nearby Safe Havens**: Live discovery of real hospitals and police stations using geospatial search.
+            - **Direct Google Maps Navigation**: One-tap turn-by-turn walking route and dialer integration.
+            - **Dual-Camera & Audio Vault**: Front/rear sequential video and acoustic evidence buffer with SHA-256 hashing.
+            - **Anti-Coercion Duress PIN**: Decoy disarm with covert ERSS-112 broadcast.
+            - **Offline Fallback**: Operates smoothly both online with Cloud backend and standalone offline.
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

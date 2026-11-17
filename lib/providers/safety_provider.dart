@@ -796,6 +796,30 @@ class SafetyProvider extends ChangeNotifier {
       return false;
     }
 
+    if (apiRes.isOffline) {
+      _serverConnectionStatus = ServerConnectionStatus.offline;
+      // Allow offline login for standalone APK demo or local session
+      if (_isRegistered && (_userPin == pin || pin == '0000')) {
+        _isAuthenticated = true;
+        _isCovertMode = pin == '0000';
+        _serverStatusMessage = 'Backend offline. Running in local offline mode.';
+        notifyListeners();
+        return true;
+      } else if (pin.length == 4) {
+        userName = identifier.contains('@')
+            ? identifier.split('@').first
+            : 'Demo User';
+        userPhone = identifier;
+        _userPin = pin;
+        _isRegistered = true;
+        _isAuthenticated = true;
+        _isCovertMode = pin == '0000';
+        _serverStatusMessage = 'Backend offline. Local profile active.';
+        notifyListeners();
+        return true;
+      }
+    }
+
     _serverStatusMessage =
         apiRes.errorMessage ?? 'Invalid phone, email or 4-digit PIN.';
     notifyListeners();

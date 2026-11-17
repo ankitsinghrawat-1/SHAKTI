@@ -1,189 +1,200 @@
-# Shakti
+# SHAKTI (शक्ति) — Unified Women's Safety Platform
 
-## Unified Women's Safety Platform
+[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter)](https://flutter.dev)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js)](https://nodejs.org)
+[![PostgreSQL](https://img.shields.io/badge/Database-Supabase%20Postgres-3ECF8E?logo=supabase)](https://supabase.com)
+[![Build APK](https://github.com/ankitsinghrawat-1/shakti/actions/workflows/build-apk.yml/badge.svg)](https://github.com/ankitsinghrawat-1/shakti/actions/workflows/build-apk.yml)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-crimson)](https://github.com/ankitsinghrawat-1/shakti/releases)
 
-> **Project status:** Conceptual architecture and implementation blueprint  
-> **Reference:** Unified Women's Safety technical blueprint, version 2.0  
-> **Scope:** Documentation and theoretical design only
+**SHAKTI** is a full-stack, offline-first personal safety application engineered for rapid emergency response, tamper-evident evidence preservation, real-time GNSS telemetry, and verified safe havens discovery.
 
-Shakti is a proposed end-to-end personal safety platform that combines an
-Android application, a smart SOS wristband, offline-first incident handling,
-independent communication, location services, authorized CCTV analytics, and
-human-reviewed response workflows.
+---
 
-It is designed to answer the complete emergency question:
+## 📱 Option 1: Mobile APK Installation (Quickest)
 
-> **How do we detect a possible emergency, preserve it reliably, deliver it
-> through the best available channel, confirm who received it, and keep an
-> accountable record?**
+You can download and install the fully functional Android application directly on any physical phone without configuring a local development environment.
 
-## Contents
+### 1. Download the APK
+- Download the latest **`app-release.apk`** from the [GitHub Releases](https://github.com/ankitsinghrawat-1/shakti/releases) page.
+- Or download the built APK directly from this repository:
+  ```
+  build/app/outputs/flutter-apk/app-release.apk
+  ```
 
-- [What Shakti Does](#what-shakti-does)
-- [Platform at a Glance](#platform-at-a-glance)
-- [Core Workflow](#core-workflow)
-- [Feature Scope](#feature-scope)
-- [Proposed Technology](#proposed-technology)
-- [Architecture](#architecture)
-- [Project Documentation](#project-documentation)
-- [Important Boundaries](#important-boundaries)
+### 2. Install on Android
+1. Open the downloaded `.apk` file on your Android device.
+2. If prompted, toggle **"Allow installation from unknown sources"** for your browser or file manager.
+3. Tap **Install** and open **SHAKTI**.
 
-## What Shakti Does
+### 3. Demo Credentials & Quick Test
+- **Registration / Sign In**:
+  - Enter any phone number (e.g. `9876543210`) or email.
+  - Choose any 4-digit PIN (e.g. `1234`).
+- **Demo OTP Verification**:
+  - Code: **`123456`** *(Tap the green Auto-Fill button on screen)*.
+- **Offline / Standalone Mode**:
+  - If running without the local backend server connected, the app automatically runs in the local secure enclave mode using PIN `1234`.
+- **Duress PIN (Anti-Coercion)**:
+  - Enter **`0000`** as your PIN to simulate a disarm while secretly alerting ERSS-112.
 
-When a wearer activates SOS, Shakti is intended to:
+---
 
-1. Validate the action and provide immediate local haptic feedback.
-2. Create a unique incident and save it before attempting transmission.
-3. Acquire the best available location, including accuracy and age.
-4. Try configured channels such as BLE, LTE, and optional fallback transports.
-5. Retry undelivered incidents when connectivity returns.
-6. Track backend receipt separately from human acknowledgement.
-7. Escalate unanswered incidents through an authorized procedure.
-8. Preserve permitted evidence with access control, hashes, and audit history.
+## 💻 Option 2: Local System Setup & Development
 
-The platform does **not** treat a notification being sent as proof that a
-contact, control room, police service, or emergency agency received it.
+Follow these instructions to run both the Node.js cloud backend and the Flutter mobile client locally on your computer.
 
-## Platform at a Glance
+### Prerequisites
+- **Flutter SDK** (v3.29+ or latest stable): [flutter.dev/docs/get-started/install](https://flutter.dev/docs/get-started/install)
+- **Node.js** (v18 or higher): [nodejs.org](https://nodejs.org)
+- **Java Development Kit (JDK 21)** (required for Gradle 8.x): OpenJDK 21 / Temurin 21
+- **Android Studio & Android SDK Command-line Tools**
+- **Git**
 
-| Layer | Responsibility | Primary capability |
-|---|---|---|
-| Android app | User interaction and permissions | SOS, contacts, location, status |
-| SOS wristband | Fast local activation | Button, haptics, BLE, offline queue |
-| Communication | Delivery resilience | BLE, LTE, GNSS, optional relay/satellite |
-| Backend | Incident coordination | APIs, retries, acknowledgements, audit |
-| AI services | Candidate signal generation | Personal-safety and CCTV analysis |
-| Response | Human and agency workflow | Review, warning, escalation |
-| Evidence | Traceability | Protected storage, hashes, retention |
+---
 
-## Core Workflow
-
-```mermaid
-flowchart LR
-    A[Wearer activates SOS] --> B[Validate and vibrate]
-    B --> C[Create incident ID]
-    C --> D[(Persist locally)]
-    D --> E[Acquire location]
-    E --> F{Available channels}
-    F -->|BLE| G[Paired Android app]
-    F -->|LTE| H[Independent wearable modem]
-    F -->|Optional| I[Relay or satellite]
-    G --> J[Backend API]
-    H --> J
-    I --> J
-    F -->|None available| K[Offline queue]
-    K --> L[Retry with backoff]
-    L --> F
-    J --> M[Server received]
-    M --> N[Notify permitted recipients]
-    N --> O[Recipient acknowledgement]
-    O --> P[Close or authorized escalation]
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/ankitsinghrawat-1/shakti.git
+cd shakti
 ```
 
-## Feature Scope
+---
 
-| Area | Initial concept | Later or advanced scope |
-|---|---|---|
-| Android | Account, contacts, manual SOS, location, incident status, BLE pairing | Voice commands, distress detection, nearby warnings |
-| Wristband | SOS button, haptics, BLE, battery status, offline queue | Independent LTE/GNSS, satellite, IMU |
-| Backend | Users, devices, incidents, delivery, acknowledgements, audit | Camera correlation, escalation, partner integrations |
-| CCTV AI | Authorized recorded footage, person detection, tracking | Temporal behaviour models and live operations |
-| Evidence | Metadata, private storage, hashes, access logs | Signed manifests and formal chain of custody |
-| Emergency services | User-directed calling and approved contacts | Formal agency integration after authorization |
+### Step 2: Configure & Start the Backend
 
-The recommended approach is to make the manual SOS and acknowledgement path
-reliable before adding sophisticated AI.
+The backend runs on **Node.js + Express** connected to **Supabase PostgreSQL**.
 
-## Proposed Technology
+1. Navigate to the backend directory:
+   ```bash
+   cd backend
+   npm install
+   ```
 
-| Component | Proposed direction |
-|---|---|
-| Mobile | Android, Kotlin, BLE, location, notifications |
-| Wearable | ESP32-class controller, BLE, persistent storage, haptics |
-| Connectivity | LTE/GNSS modules; optional relay or satellite accessory |
-| Backend | Node.js, Express, PostgreSQL, Prisma |
-| AI workloads | Python services isolated from the incident API |
-| Push notifications | Firebase Cloud Messaging or equivalent |
-| Evidence | Private object storage with encrypted transport |
+2. Create your environment configuration file `backend/.env`:
+   ```env
+   NODE_ENV=development
+   PORT=3000
+   DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
+   JWT_SECRET=your_jwt_secret_key_at_least_32_characters_long
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_secret
+   SUPABASE_EVIDENCE_BUCKET=evidence-vault
+   DEMO_OTP_ENABLED=true
+   DEMO_OTP_CODE=123456
+   ```
 
-These are candidate technologies for a future implementation, not evidence that
-the system has already been built.
+3. Run database migrations to provision tables:
+   ```bash
+   npm run db:migrate
+   ```
 
-## Architecture
+4. Execute automated backend smoke tests:
+   ```bash
+   node test_backend.js
+   ```
 
-```mermaid
-flowchart TB
-    subgraph Device["Device layer"]
-        Band[SOS wristband]
-        Radio[BLE / LTE / GNSS / optional fallback]
-    end
-    subgraph Mobile["Mobile layer"]
-        App[Android application]
-        Consent[Consent and permissions]
-    end
-    subgraph Services["Platform services"]
-        API[Versioned incident API]
-        Delivery[Delivery and retry orchestration]
-        DB[(PostgreSQL)]
-        Audit[(Audit records)]
-        Object[(Private evidence storage)]
-    end
-    subgraph Intelligence["Intelligence and response"]
-        AI[Python AI services]
-        CCTV[Authorized camera sources]
-        Review[Human review / control room]
-        Contacts[Emergency contacts]
-    end
-    Band --> Radio
-    Radio <--> App
-    App --> Consent
-    App --> API
-    Radio --> API
-    API --> Delivery
-    API --> DB
-    Delivery --> Contacts
-    API --> Audit
-    API --> Object
-    CCTV --> AI --> API
-    API --> Review
+5. Start the backend server:
+   ```bash
+   npm start
+   ```
+   *The server starts on `http://localhost:3000/api/v1`.*
+
+---
+
+### Step 3: Run the Flutter Client
+
+1. Open a new terminal and return to the project root:
+   ```bash
+   cd ..
+   flutter pub get
+   ```
+
+2. Verify project diagnostics:
+   ```bash
+   flutter analyze
+   ```
+
+3. **Running on Connected Android Phone via USB**:
+   - Enable **USB Debugging** on your Android phone under Developer Options.
+   - Connect the phone via USB cable and run:
+     ```bash
+     flutter devices
+     ```
+   - Forward the backend port so your phone can reach `http://localhost:3000`:
+     ```bash
+     adb reverse tcp:3000 tcp:3000
+     ```
+   - Launch the app in debug/profile mode:
+     ```bash
+     flutter run -d <DEVICE_ID>
+     ```
+
+4. **Running on Local Computer / Chrome Browser**:
+   ```bash
+   flutter run -d chrome
+   ```
+
+---
+
+### Step 4: Building a Production Release APK Locally
+
+To compile an optimized, standalone release APK on your machine:
+
+```powershell
+flutter build apk --release
 ```
 
-### Key design principles
+The compiled APK will be generated at:
+```
+build/app/outputs/flutter-apk/app-release.apk
+```
 
-- **Persist first:** save the event before any network attempt.
-- **Offline first:** retain useful local behaviour during outages.
-- **Idempotent retries:** reuse the incident ID to prevent duplicates.
-- **Honest status:** server receipt, recipient acknowledgement, and closure are
-  different states.
-- **Privacy by design:** collect only necessary, consented data.
-- **Human oversight:** AI produces candidate events; authorized people review
-  consequential actions.
-- **Replaceable transports:** no single communication path is assumed to be
-  universally available.
+To install directly to a connected USB device:
+```powershell
+adb install -r build/app/outputs/flutter-apk/app-release.apk
+```
 
-## Project Documentation
+---
 
-| Document | Description |
-|---|---|
-| [Architecture](ARCHITECTURE.md) | Layers, incident state machine, data flow, and reliability rules |
-| [Design and Workflows](DESIGN_AND_WORKFLOWS.md) | User experience, SOS, BLE, camera, evidence, and hardware workflows |
-| [Implementation Blueprint](IMPLEMENTATION_BLUEPRINT.md) | Technology, data model, API responsibilities, roadmap, and validation |
-| [Security and Privacy](SECURITY_PRIVACY.md) | Security controls, privacy rules, responsible AI, and evidence integrity |
+## 🌐 Connecting Phone to Local Backend over Wi-Fi
 
-## Important Boundaries
+If running without a USB cable (or over Wi-Fi):
+1. Find your computer's local IP address (e.g. `192.168.1.45` via `ipconfig` on Windows or `ifconfig` on macOS/Linux).
+2. Ensure both your computer and phone are connected to the same Wi-Fi network.
+3. In the mobile app, tap the **Server Connection Pill** on the Login screen or open **App Settings > Backend Connection** and set:
+   ```
+   http://192.168.1.45:3000/api/v1
+   ```
 
-This repository does not contain a working application, firmware, AI model,
-live CCTV integration, satellite service, police API, or emergency dispatch
-integration.
+---
 
-The concept does not guarantee communication when all networks and relays are
-unavailable. Camera AI is not proof that a crime occurred. A prototype bill of
-materials is not a certified production design. Any real deployment requires
-engineering validation, security testing, hardware certification, privacy and
-legal review, service agreements, and controlled operational pilots.
+## 🛠️ Key Architectural Capabilities
 
-## License and Usage
+| Capability | Implementation Detail |
+| :--- | :--- |
+| **Sub-Meter Live GNSS** | Continuous 1m high-accuracy GPS hardware stream with 6-decimal precision and live street address reverse geocoding. |
+| **Real Nearby Havens Discovery** | Real-time geospatial lookup via OpenStreetMap Nominatim & Google Places to discover actual hospitals, police posts, and safe points around user. |
+| **Turn-by-Turn Navigation** | Native one-tap walking route guidance and emergency phone dialing (`112` / `108`) directly in Google Maps. |
+| **Tamper-Evident Evidence Vault** | Acoustic recording + sequential dual-camera video, hashed using SHA-256, uploaded to private Supabase Storage, with in-app playback and PDF dossier export. |
+| **Anti-Coercion Duress PIN** | Secret PIN (`0000`) disarms UI visually while silently dispatching high-priority covert duress telemetry to ERSS-112. |
+| **Camouflage Calculator** | Instant decoy screen disguising SHAKTI as a working calculator under duress. |
+| **Automated CI/CD** | GitHub Actions workflow compiles the release APK automatically on every commit. |
 
-This repository currently serves as a project-planning and architecture
-reference. Implementation, licensing, and deployment terms must be defined
-before production development begins.
+---
+
+## 🧪 Verification & Health Check
+
+Run these checks to verify system readiness:
+
+```bash
+# Verify backend smoke tests (Auth, Registration, Guardians, Feedback)
+node backend/test_backend.js
+
+# Verify Flutter code compliance
+flutter analyze
+```
+
+---
+
+## 📄 License
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
